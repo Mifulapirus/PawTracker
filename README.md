@@ -20,3 +20,17 @@
 ## Getting Started
 
 Documentation and setup instructions will be added as development progresses.
+
+## Firmware
+
+The `Firmware/` directory contains a single shared firmware image for the Heltec Wireless Tracker, which can run as either:
+
+- **PupBeacon** (dog-worn tracker)
+- **PupStation** (human-carried base station)
+
+The role is selected at boot using the BOOT button (GPIO0):
+
+- **Button not pressed during reset** → runs as **PupBeacon** (power-efficient GPS beacon with LoRa uplink and remote LED/buzzer control).
+- **Button held during reset** → runs as **PupStation** (LoRa receiver that displays location data and sends LED/buzzer control commands).
+
+PupBeacon firmware is optimized for low power by spending most of its time in deep sleep, waking periodically to acquire a GPS fix, transmit it over LoRa, briefly listen for control messages, and then going back to sleep.
