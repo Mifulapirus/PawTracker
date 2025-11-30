@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset='UTF-8'>
+  <meta name='viewport' content='width=device-width, initial-scale=1'>
+  <title>CoqueTracker Statistics</title>
+  <link rel='stylesheet' href='/style.css'>
+  <script src='https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js'></script>
+</head>
+<body>
+  <div class='container'>
+    <div id='header'></div>
+    
+    <div class='card'>
+      <h2>💾 Memory Analysis</h2>
+      <p style='color: #999; margin-bottom: 15px;'>Real-time ESP32 memory usage and heap monitoring</p>
+      
+      <div class='stats-grid'>
+        <div class='stat-card'>
+          <h3>🧠 Heap Memory</h3>
+          <div class='stat-item'>
+            <span class='stat-label'>Free Heap</span>
+            <span class='stat-value' id='freeHeap'>--</span>
+          </div>
+          <div class='stat-item'>
+            <span class='stat-label'>Total Heap</span>
+            <span class='stat-value' id='totalHeap'>--</span>
+          </div>
+          <div class='stat-item'>
+            <span class='stat-label'>Usage</span>
+            <span class='stat-value' id='heapUsage'>--</span>
+          </div>
+        </div>
+        
+        <div class='stat-card'>
+          <h3>💿 Flash & PSRAM</h3>
+          <div class='stat-item'>
+            <span class='stat-label'>Stats File Size</span>
+            <span class='stat-value' id='statsFileSize'>--</span>
+          </div>
+          <div class='stat-item'>
+            <span class='stat-label'>Sketch Size</span>
+            <span class='stat-value' id='sketchSize'>--</span>
+          </div>
+          <div class='stat-item'>
+            <span class='stat-label'>Free Sketch</span>
+            <span class='stat-value' id='freeSketch'>--</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <div class='card'>
+      <h2>📊 System Statistics</h2>
+      <p style='color: #999; margin-bottom: 15px;'>Real-time uptime and battery monitoring for Station and Beacon</p>
+      
+      <div class='stats-grid'>
+        <div class='stat-card'>
+          <h3>📱 Station</h3>
+          <div class='stat-item'>
+            <span class='stat-label'>Current Uptime</span>
+            <span class='stat-value' id='stationUptime'>--</span>
+          </div>
+          <div class='stat-item'>
+            <span class='stat-label'>Battery Voltage</span>
+            <span class='stat-value' id='stationBattery'>--</span>
+          </div>
+          <div class='stat-item'>
+            <span class='stat-label'>Total Reboots</span>
+            <span class='stat-value' id='stationReboots'>--</span>
+          </div>
+        </div>
+        
+        <div class='stat-card'>
+          <h3>🐕 Beacon</h3>
+          <div class='stat-item'>
+            <span class='stat-label'>Last Seen</span>
+            <span class='stat-value' id='beaconLastSeen'>--</span>
+          </div>
+          <div class='stat-item'>
+            <span class='stat-label'>Battery Voltage</span>
+            <span class='stat-value' id='beaconBattery'>--</span>
+          </div>
+          <div class='stat-item'>
+            <span class='stat-label'>Signal Quality</span>
+            <span class='stat-value' id='beaconSignal'>--</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <div class='card'>
+      <h2>🔋 Battery History</h2>
+      <div class='chart-container'>
+        <canvas id='batteryChart'></canvas>
+      </div>
+    </div>
+    
+    <div class='card'>
+      <h2>⏱️ Uptime History</h2>
+      <div class='chart-container'>
+        <canvas id='uptimeChart'></canvas>
+      </div>
+    </div>
+    
+    <div class='card'>
+      <h2>📈 Detailed Statistics</h2>
+      <div class='stats-table'>
+        <table>
+          <thead>
+            <tr>
+              <th>Metric</th>
+              <th>Station</th>
+              <th>Beacon</th>
+            </tr>
+          </thead>
+          <tbody id='statsTableBody'>
+            <tr>
+              <td>Avg Battery (24h)</td>
+              <td id='stationAvgBat'>--</td>
+              <td id='beaconAvgBat'>--</td>
+            </tr>
+            <tr>
+              <td>Min Battery (24h)</td>
+              <td id='stationMinBat'>--</td>
+              <td id='beaconMinBat'>--</td>
+            </tr>
+            <tr>
+              <td>Max Battery (24h)</td>
+              <td id='stationMaxBat'>--</td>
+              <td id='beaconMaxBat'>--</td>
+            </tr>
+            <tr>
+              <td>Total Uptime (7d)</td>
+              <td id='stationTotalUptime'>--</td>
+              <td id='beaconTotalUptime'>--</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      
+      <div class='controls' style='margin-top: 20px;'>
+        <button class='btn-export' onclick='exportStats()'>📥 Export Data (CSV)</button>
+        <button class='btn-clear' onclick='clearStats()'>🗑️ Clear Stats File</button>
+      </div>
+    </div>
+  </div>
+  
+  <script>
+    // Load header
+    fetch('/header.html')
+      .then(response => response.text())
+      .then(html => document.getElementById('header').innerHTML = html);
+  </script>
+  <script src='/stats.js'></script>
+</body>
+</html>

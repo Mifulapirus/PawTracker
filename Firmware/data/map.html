@@ -6,260 +6,10 @@
   <title>CoqueTracker Map</title>
   <link rel='stylesheet' href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css' />
   <link rel='stylesheet' href='/style.css'>
-  <style>
-    body {
-      margin: 0;
-      padding: 0;
-      overflow-x: hidden;
-      background: linear-gradient(135deg, #1a1625 0%, #2d1b3d 50%, #1a1625 100%);
-      background-attachment: fixed;
-      min-height: 100vh;
-    }
-
-    .container {
-      padding: 10px;
-    }
-
-    h1 {
-      margin: 10px 0;
-      font-size: 1.8rem;
-      background: linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-      text-shadow: 0 0 30px rgba(236, 72, 153, 0.3);
-      font-weight: 700;
-    }
-
-    .map-container {
-      position: relative;
-      margin: 15px 0;
-    }
-
-    #map {
-      height: 60vh;
-      min-height: 400px;
-      width: 100%;
-      border-radius: 12px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-      z-index: 1;
-    }
-
-    #map.fullscreen {
-      position: fixed !important;
-      top: 0 !important;
-      left: 0 !important;
-      width: 100vw !important;
-      height: 100vh !important;
-      border-radius: 0 !important;
-      z-index: 9999 !important;
-      margin: 0 !important;
-    }
-
-    .fullscreen-btn {
-      position: absolute;
-      top: 10px;
-      right: 10px;
-      z-index: 1000;
-      background: linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%);
-      border: 2px solid rgba(255, 105, 180, 0.3);
-      border-radius: 8px;
-      padding: 10px;
-      cursor: pointer;
-      box-shadow: 0 2px 8px rgba(236, 72, 153, 0.4);
-      font-size: 20px;
-      width: 40px;
-      height: 40px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: all 0.3s;
-      color: white;
-    }
-
-    .fullscreen-btn:hover {
-      background: linear-gradient(135deg, #db2777 0%, #7c3aed 100%);
-      transform: scale(1.05);
-      box-shadow: 0 4px 12px rgba(236, 72, 153, 0.6);
-    }
-
-    .fullscreen-btn:active {
-      transform: scale(0.95);
-    }
-
-    .distance-overlay {
-      position: absolute;
-      bottom: 20px;
-      left: 20px;
-      background: linear-gradient(135deg, rgba(236, 72, 153, 0.95) 0%, rgba(139, 92, 246, 0.95) 100%);
-      color: white;
-      padding: 15px 20px;
-      border-radius: 10px;
-      font-size: 1.5rem;
-      font-weight: bold;
-      z-index: 1001;
-      display: none;
-      box-shadow: 0 4px 12px rgba(236, 72, 153, 0.6);
-      backdrop-filter: blur(10px);
-      border: 2px solid rgba(255, 255, 255, 0.2);
-    }
-
-    .distance-overlay.show {
-      display: block;
-    }
-
-    .distance-value {
-      color: #ffffff;
-      font-size: 2rem;
-      margin-top: 5px;
-      text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
-    }
-
-    .info-panel {
-      background: linear-gradient(135deg, #2a1a2e 0%, #1a1a2e 100%);
-      padding: 20px;
-      border-radius: 12px;
-      margin: 15px 0;
-      box-shadow: 0 2px 8px rgba(255, 105, 180, 0.2);
-      border: 1px solid rgba(255, 105, 180, 0.1);
-    }
-
-    .info-panel h3 {
-      margin-top: 0;
-      margin-bottom: 15px;
-      color: #FF69B4;
-      text-shadow: 0 0 10px rgba(255, 105, 180, 0.3);
-    }
-
-    .info-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin: 12px 0;
-      padding: 8px 0;
-      border-bottom: 1px solid rgba(255, 105, 180, 0.1);
-      font-size: 1rem;
-    }
-
-    .info-row:last-child {
-      border-bottom: none;
-    }
-
-    .info-row span:first-child {
-      color: #c084fc;
-      font-weight: 500;
-    }
-
-    .info-row span:last-child {
-      color: #fbbf24;
-      font-weight: 600;
-      text-align: right;
-      word-break: break-all;
-    }
-
-    .nav-links {
-      display: flex;
-      gap: 10px;
-      margin: 15px 0;
-      flex-wrap: wrap;
-    }
-
-    .nav-link {
-      padding: 12px 20px;
-      background: linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%);
-      color: white;
-      text-decoration: none;
-      border-radius: 8px;
-      transition: all 0.3s;
-      font-weight: 500;
-      flex: 1;
-      text-align: center;
-      min-width: 120px;
-      box-shadow: 0 2px 8px rgba(236, 72, 153, 0.3);
-    }
-
-    .nav-link:hover {
-      background: linear-gradient(135deg, #db2777 0%, #7c3aed 100%);
-      transform: translateY(-2px);
-      box-shadow: 0 4px 12px rgba(236, 72, 153, 0.5);
-    }
-
-    .nav-link.active {
-      background: linear-gradient(135deg, #be185d 0%, #6d28d9 100%);
-      box-shadow: 0 2px 4px rgba(190, 24, 93, 0.4);
-    }
-
-    /* Mobile optimizations */
-    @media (max-width: 768px) {
-      h1 {
-        font-size: 1.5rem;
-      }
-
-      #map {
-        height: 50vh;
-        min-height: 300px;
-      }
-
-      .info-row {
-        font-size: 0.9rem;
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 5px;
-      }
-
-      .info-row span:last-child {
-        text-align: left;
-      }
-
-      .distance-overlay {
-        font-size: 1.2rem;
-        padding: 12px 16px;
-        bottom: 10px;
-        left: 10px;
-      }
-
-      .distance-value {
-        font-size: 1.5rem;
-      }
-
-      .nav-link {
-        font-size: 0.9rem;
-        padding: 10px 15px;
-      }
-    }
-
-    /* Desktop optimizations */
-    @media (min-width: 769px) {
-      .container {
-        max-width: 1200px;
-        margin: 0 auto;
-        padding: 20px;
-      }
-
-      #map {
-        height: 70vh;
-      }
-
-      .info-panel {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 20px;
-      }
-
-      .info-panel h3 {
-        grid-column: 1 / -1;
-      }
-    }
-  </style>
 </head>
 <body>
   <div class='container'>
-    <h1>🐾 CoqueTracker Map</h1>
-    
-    <div class='nav-links'>
-      <a href='/' class='nav-link'>Dashboard</a>
-      <a href='/map.html' class='nav-link active'>Map View</a>
-    </div>
+    <div id='header'></div>
     
     <div class='map-container'>
       <button class='fullscreen-btn' onclick='toggleFullscreen()' title='Toggle Fullscreen'>⛶</button>
@@ -273,12 +23,12 @@
     <div class='info-panel'>
       <h3>Location Info</h3>
       <div class='info-row'>
-        <span>🐕 Beacon (Dog):</span>
-        <span id='beaconInfo'>Waiting for data...</span>
+        <span>🏃 Dog Speed:</span>
+        <span id='dogSpeed'>--</span>
       </div>
       <div class='info-row'>
-        <span>📱 Station (You):</span>
-        <span id='stationInfo'>Getting location...</span>
+        <span>⛰️ Relative Altitude:</span>
+        <span id='dogAltitude'>--</span>
       </div>
       <div class='info-row'>
         <span>📏 Distance:</span>
@@ -291,6 +41,12 @@
     </div>
   </div>
   
+  <script>
+    // Load header
+    fetch('/header.html')
+      .then(response => response.text())
+      .then(html => document.getElementById('header').innerHTML = html);
+  </script>
   <script src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'></script>
   <script src='/map.js'></script>
 </body>

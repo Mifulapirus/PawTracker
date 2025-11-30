@@ -98,6 +98,9 @@ struct __attribute__((packed)) BeaconMessage {
   uint8_t ledOn;
   uint8_t buzzerOn;
   uint8_t lastControlReceived; // 0=none, 1=LED, 2=Buzzer, 3=Both
+  float speed;       // Speed in km/h
+  float altitude;    // Altitude in meters
+  uint32_t uptime;   // Beacon uptime in seconds
 };
 
 struct __attribute__((packed)) ControlMessage {
@@ -125,6 +128,9 @@ struct LatestBeaconData {
   bool ledOn = false;
   bool buzzerOn = false;
   uint8_t lastControlReceived = 0;
+  float speed = 0.0;
+  float altitude = 0.0;
+  uint32_t uptime = 0;
   uint32_t lastUpdate = 0;
   float rssi = 0.0;
   float snr = 0.0;
@@ -137,6 +143,7 @@ struct StationLocation {
   float longitude = 0.0;
   float hdop = 0.0;
   uint8_t sats = 0;
+  float altitude = 0.0;
   bool hasValidFix = false;
   uint32_t lastUpdate = 0;
 } stationLocation;
@@ -147,6 +154,157 @@ struct BeaconControlState {
   bool buzzerOn = false;
   bool pendingControl = false; // Flag to send control on next beacon reception
 } beaconControl;
+
+// -----------------------------------------------------------------------------
+// Statistics Tracking
+// -----------------------------------------------------------------------------
+
+const char* STATS_FILE = "/stats.csv";
+const uint32_t STATS_LOG_INTERVAL = 5000; // TODO: Change to 60000 (1 minute) after testing
+const uint32_t MAX_STATS_FILE_SIZE = 1024; // Keep file under 1KB
+uint32_t lastStatsLog = 0;
+uint32_t bootTime = 0;
+uint32_t rebootCount = 0;
+
+struct StatsEntry {
+  uint32_t timestamp;
+  uint32_t stationUptime;
+  float stationBattery;
+  uint32_t beaconUptime;
+  float beaconBattery;
+};
+
+// Forward declaration
+float readBatteryVoltage();
+
+// Log statistics to file
+void logStats() {
+  // Only log if we have valid GPS time
+  if (!gps.time.isValid() || !gps.date.isValid()) {
+    Serial.println("Skipping stats log - no GPS time available");
+    return;
+  }
+  
+  uint32_t now = millis();
+  uint32_t stationUptime = (now - bootTime) / 1000; // uptime in seconds
+  float stationBattery = readBatteryVoltage();
+  
+  // Calculate beacon uptime (time since last seen, or 0 if never seen)
+  uint32_t beaconUptime = 0;
+  float beaconBattery = 0.0;
+  if (latestBeacon.hasData) {
+    beaconUptime = (now - latestBeacon.lastUpdate) / 1000; // seconds since last beacon
+    beaconBattery = latestBeacon.batteryVoltage;
+  }
+  
+  // Create Unix timestamp from GPS date/time
+  // Note: TinyGPS++ provides UTC time
+  struct tm timeinfo;
+  timeinfo.tm_year = gps.date.year() - 1900;
+  timeinfo.tm_mon = gps.date.month() - 1;
+  timeinfo.tm_mday = gps.date.day();
+  timeinfo.tm_hour = gps.time.hour();
+  timeinfo.tm_min = gps.time.minute();
+  timeinfo.tm_sec = gps.time.second();
+  timeinfo.tm_isdst = 0;
+  time_t timestamp = mktime(&timeinfo);
+  
+  // Check current file size before writing
+  File file = LittleFS.open(STATS_FILE, FILE_READ);
+  size_t currentSize = 0;
+  if (file) {
+    currentSize = file.size();
+    file.close();
+  }
+  
+  // If file is too large, rotate (remove oldest entries)
+  if (currentSize >= MAX_STATS_FILE_SIZE) {
+    file = LittleFS.open(STATS_FILE, FILE_READ);
+    if (file) {
+      String header = file.readStringUntil('\n');
+      
+      // Skip lines until we're under 75% of max size (leave room for new entries)
+      String keepData = "";
+      size_t targetSize = (MAX_STATS_FILE_SIZE * 3) / 4;
+      
+      // Read all lines first
+      String allLines[100]; // Buffer for lines
+      int lineCount = 0;
+      while (file.available() && lineCount < 100) {
+        allLines[lineCount++] = file.readStringUntil('\n');
+      }
+      file.close();
+      
+      // Keep only the most recent lines that fit
+      int startIdx = 0;
+      for (int i = lineCount - 1; i >= 0; i--) {
+        if (keepData.length() + allLines[i].length() + 2 < targetSize) {
+          keepData = allLines[i] + "\n" + keepData;
+          startIdx = i;
+        } else {
+          break;
+        }
+      }
+      
+      // Rewrite file with header and kept data
+      file = LittleFS.open(STATS_FILE, FILE_WRITE);
+      if (file) {
+        file.println(header);
+        file.print(keepData);
+        file.close();
+        Serial.println("Stats file rotated (FIFO)");
+      }
+    }
+  }
+  
+  // Check if file exists, create with header if not
+  if (!LittleFS.exists(STATS_FILE)) {
+    file = LittleFS.open(STATS_FILE, FILE_WRITE);
+    if (file) {
+      file.println("T,SUT,SB,BUT,BB");
+      file.close();
+    }
+  }
+  
+  // Open file in append mode
+  file = LittleFS.open(STATS_FILE, FILE_APPEND);
+  if (!file) {
+    Serial.println("Failed to open stats file for writing");
+    return;
+  }
+  
+  // Write data (compact format)
+  file.print(timestamp);
+  file.print(",");
+  file.print(stationUptime);
+  file.print(",");
+  file.print(stationBattery, 2);
+  file.print(",");
+  file.print(beaconUptime);
+  file.print(",");
+  file.println(beaconBattery, 2);
+  
+  file.close();
+}
+
+// Initialize stats tracking
+void initStats() {
+  bootTime = millis();
+  
+  // Load reboot count from preferences
+  preferences.begin("pawtracker", false);
+  rebootCount = preferences.getUInt("rebootCount", 0);
+  rebootCount++;
+  preferences.putUInt("rebootCount", rebootCount);
+  preferences.end();
+  
+  Serial.print("Boot #");
+  Serial.println(rebootCount);
+  
+  // Log initial entry
+  lastStatsLog = millis();
+  logStats();
+}
 
 // -----------------------------------------------------------------------------
 // Utility
@@ -555,6 +713,9 @@ void loopPupBeacon() {
   msg.ledOn = currentLedState ? 1 : 0;
   msg.buzzerOn = currentBuzzerState ? 1 : 0;
   msg.lastControlReceived = lastControlCmd;
+  msg.speed = (gotFix && gps.speed.isValid()) ? gps.speed.kmph() : 0.0f;
+  msg.altitude = (gotFix && gps.altitude.isValid()) ? gps.altitude.meters() : 0.0f;
+  msg.uptime = (millis() - bootTime) / 1000; // Uptime in seconds
 
   // Send via LoRa
   Serial.print("Sending beacon, size: ");
@@ -691,6 +852,8 @@ void setupWiFiAndWebServer() {
     json += "\"ledOn\":" + String(latestBeacon.ledOn ? "true" : "false") + ",";
     json += "\"buzzerOn\":" + String(latestBeacon.buzzerOn ? "true" : "false") + ",";
     json += "\"lastControlReceived\":" + String(latestBeacon.lastControlReceived) + ",";
+    json += "\"speed\":" + String(latestBeacon.speed, 2) + ",";
+    json += "\"altitude\":" + String(latestBeacon.altitude, 1) + ",";
     json += "\"lastUpdate\":" + String(latestBeacon.lastUpdate) + ",";
     json += "\"station\":{";
     json += "\"hasValidFix\":" + String(stationLocation.hasValidFix ? "true" : "false") + ",";
@@ -698,6 +861,7 @@ void setupWiFiAndWebServer() {
     json += "\"longitude\":" + String(stationLocation.longitude, 6) + ",";
     json += "\"hdop\":" + String(stationLocation.hdop, 2) + ",";
     json += "\"sats\":" + String(stationLocation.sats) + ",";
+    json += "\"altitude\":" + String(stationLocation.altitude, 1) + ",";
     json += "\"lastUpdate\":" + String(stationLocation.lastUpdate);
     json += "}";
     json += "}";
@@ -743,10 +907,188 @@ void setupWiFiAndWebServer() {
     ESP.restart();
   });
   
+  // Statistics API endpoints - IMPORTANT: More specific routes first!
+  
+  // Export stats file as CSV
+  server.on("/api/stats/export", HTTP_GET, [](AsyncWebServerRequest *request){
+    if (!LittleFS.exists(STATS_FILE)) {
+      request->send(404, "text/plain", "Stats file not found");
+      return;
+    }
+    
+    File file = LittleFS.open(STATS_FILE, FILE_READ);
+    if (!file) {
+      request->send(500, "text/plain", "Failed to open stats file");
+      return;
+    }
+    
+    AsyncWebServerResponse *response = request->beginResponse(file, STATS_FILE, "text/csv", true);
+    response->addHeader("Content-Disposition", "attachment; filename=stats.csv");
+    request->send(response);
+  });
+  
+  // Clear stats file
+  server.on("/api/stats/clear", HTTP_POST, [](AsyncWebServerRequest *request){
+    LittleFS.remove(STATS_FILE);
+    Serial.println("Stats file cleared");
+    
+    // Reinitialize with fresh log
+    logStats();
+    
+    request->send(200, "text/plain", "Stats cleared");
+  });
+  
+  // Get stats as JSON (for dashboard)
+  server.on("/api/stats", HTTP_GET, [](AsyncWebServerRequest *request){
+    uint32_t now = millis();
+    uint32_t uptime = (now - bootTime) / 1000;
+    float stationBattery = readBatteryVoltage();
+    uint32_t beaconLastSeen = latestBeacon.hasData ? (now - latestBeacon.lastUpdate) / 1000 : 0;
+    
+    // Read stats file to calculate aggregates
+    float stationAvgBat = 0, stationMinBat = 5.0, stationMaxBat = 0;
+    float beaconAvgBat = 0, beaconMinBat = 5.0, beaconMaxBat = 0;
+    int dataPoints = 0;
+    uint32_t totalUptime = 0;
+    
+    File file = LittleFS.open(STATS_FILE, FILE_READ);
+    if (file) {
+      file.readStringUntil('\n'); // Skip header
+      while (file.available()) {
+        String line = file.readStringUntil('\n');
+        if (line.length() > 0) {
+          // Parse: timestamp,stationUptime,stationBattery,beaconUptime,beaconBattery
+          int idx1 = line.indexOf(',');
+          int idx2 = line.indexOf(',', idx1 + 1);
+          int idx3 = line.indexOf(',', idx2 + 1);
+          int idx4 = line.indexOf(',', idx3 + 1);
+          
+          if (idx1 > 0 && idx2 > 0 && idx3 > 0 && idx4 > 0) {
+            uint32_t uptimeVal = line.substring(idx1 + 1, idx2).toInt();
+            float staBat = line.substring(idx2 + 1, idx3).toFloat();
+            float beaBat = line.substring(idx4 + 1).toFloat();
+            
+            totalUptime = max(totalUptime, uptimeVal);
+            stationAvgBat += staBat;
+            beaconAvgBat += beaBat;
+            stationMinBat = min(stationMinBat, staBat);
+            stationMaxBat = max(stationMaxBat, staBat);
+            if (beaBat > 0) {
+              beaconMinBat = min(beaconMinBat, beaBat);
+              beaconMaxBat = max(beaconMaxBat, beaBat);
+            }
+            dataPoints++;
+          }
+        }
+      }
+      file.close();
+    }
+    
+    if (dataPoints > 0) {
+      stationAvgBat /= dataPoints;
+      beaconAvgBat /= dataPoints;
+    }
+    
+    // Get stats file size
+    size_t statsFileSize = 0;
+    File statsFile = LittleFS.open(STATS_FILE, FILE_READ);
+    if (statsFile) {
+      statsFileSize = statsFile.size();
+      statsFile.close();
+    }
+    
+    // Build JSON response
+    String json = "{";
+    json += "\"memory\":{";
+    json += "\"freeHeap\":" + String(ESP.getFreeHeap()) + ",";
+    json += "\"totalHeap\":" + String(ESP.getHeapSize()) + ",";
+    json += "\"freePsram\":" + String(ESP.getFreePsram()) + ",";
+    json += "\"totalPsram\":" + String(ESP.getPsramSize()) + ",";
+    json += "\"sketchSize\":" + String(ESP.getSketchSize()) + ",";
+    json += "\"freeSketch\":" + String(ESP.getFreeSketchSpace()) + ",";
+    json += "\"statsFileSize\":" + String(statsFileSize);
+    json += "},";
+    json += "\"station\":{";
+    json += "\"uptime\":" + String(uptime) + ",";
+    json += "\"battery\":" + String(stationBattery, 2) + ",";
+    json += "\"rebootCount\":" + String(rebootCount);
+    json += "},";
+    json += "\"beacon\":{";
+    json += "\"battery\":" + String(latestBeacon.batteryVoltage, 2) + ",";
+    json += "\"rssi\":" + String(latestBeacon.rssi, 1) + ",";
+    json += "\"lastSeen\":" + String(beaconLastSeen);
+    json += "},";
+    json += "\"stats\":{";
+    json += "\"station\":{";
+    json += "\"avgBattery\":" + String(stationAvgBat, 2) + ",";
+    json += "\"minBattery\":" + String(stationMinBat, 2) + ",";
+    json += "\"maxBattery\":" + String(stationMaxBat, 2) + ",";
+    json += "\"totalUptime\":" + String(totalUptime);
+    json += "},";
+    json += "\"beacon\":{";
+    json += "\"avgBattery\":" + String(beaconAvgBat, 2) + ",";
+    json += "\"minBattery\":" + String(beaconMinBat, 2) + ",";
+    json += "\"maxBattery\":" + String(beaconMaxBat, 2) + ",";
+    json += "\"dataPoints\":" + String(dataPoints);
+    json += "}";
+    json += "},";
+    json += "\"history\":[";
+    
+    // Read history data (last 100 entries)
+    file = LittleFS.open(STATS_FILE, FILE_READ);
+    if (file) {
+      file.readStringUntil('\n'); // Skip header
+      String entries[100];
+      int entryCount = 0;
+      
+      while (file.available() && entryCount < 100) {
+        String line = file.readStringUntil('\n');
+        if (line.length() > 0) {
+          // Parse: timestamp,stationUptime,stationBattery,beaconUptime,beaconBattery
+          int idx1 = line.indexOf(',');
+          int idx2 = line.indexOf(',', idx1 + 1);
+          int idx3 = line.indexOf(',', idx2 + 1);
+          int idx4 = line.indexOf(',', idx3 + 1);
+          
+          if (idx1 > 0 && idx2 > 0 && idx3 > 0 && idx4 > 0) {
+            String entry = "{";
+            entry += "\"timestamp\":" + line.substring(0, idx1) + ",";
+            entry += "\"stationUptime\":" + line.substring(idx1 + 1, idx2) + ",";
+            entry += "\"stationBattery\":" + line.substring(idx2 + 1, idx3) + ",";
+            entry += "\"beaconUptime\":" + line.substring(idx3 + 1, idx4) + ",";
+            entry += "\"beaconBattery\":" + line.substring(idx4 + 1);
+            entry += "}";
+            entries[entryCount++] = entry;
+          }
+        }
+      }
+      file.close();
+      
+      // Add entries to JSON (most recent first)
+      for (int i = max(0, entryCount - 100); i < entryCount; i++) {
+        if (i > max(0, entryCount - 100)) json += ",";
+        json += entries[i];
+      }
+    }
+    
+    json += "]";
+    json += "}";
+    
+    request->send(200, "application/json", json);
+  });
+  
+  // Handle favicon to prevent 404 errors
+  server.on("/favicon.ico", HTTP_GET, [](AsyncWebServerRequest *request){
+    // Return empty 204 No Content to prevent errors
+    request->send(204);
+  });
+  
   // Serve static files from LittleFS (must be after API routes)
+  // Disable gzip compression lookup to avoid .gz file errors
   server.serveStatic("/", LittleFS, "/")
     .setDefaultFile("index.html")
-    .setCacheControl("max-age=600");
+    .setCacheControl("max-age=600")
+    .setTemplateProcessor(NULL); // Disable template processing
   
   if (!serverStarted) {
     server.begin();
@@ -776,6 +1118,9 @@ void setupPupStation() {
 
   // Setup WiFi and web server
   setupWiFiAndWebServer();
+  
+  // Initialize statistics tracking
+  initStats();
 
   Serial.println("PupStation ready, listening continuously for beacons...");
   Serial.println("PupStation setup complete!");
@@ -812,25 +1157,78 @@ void handleIncomingBeacon(const BeaconMessage &msg, float rssi, float snr) {
   latestBeacon.ledOn = msg.ledOn;
   latestBeacon.buzzerOn = msg.buzzerOn;
   latestBeacon.lastControlReceived = msg.lastControlReceived;
+  latestBeacon.speed = msg.speed;
+  latestBeacon.altitude = msg.altitude;
+  latestBeacon.uptime = msg.uptime;
   latestBeacon.lastUpdate = millis();
   latestBeacon.rssi = rssi;
   latestBeacon.snr = snr;
   latestBeacon.hasData = true;
   
-  Serial.print("Latitude:  ");
-  Serial.println(msg.latitude, 6);
-  Serial.print("Longitude: ");
-  Serial.println(msg.longitude, 6);
-  Serial.print("HDOP: ");
-  Serial.print(msg.hdop, 1);
-  Serial.print("  Satellites: ");
+  // System Info
+  Serial.print("Uptime:       ");
+  uint32_t uptimeSeconds = msg.uptime;
+  uint32_t days = uptimeSeconds / 86400;
+  uint32_t hours = (uptimeSeconds % 86400) / 3600;
+  uint32_t minutes = (uptimeSeconds % 3600) / 60;
+  uint32_t seconds = uptimeSeconds % 60;
+  if (days > 0) {
+    Serial.print(days);
+    Serial.print("d ");
+  }
+  if (hours > 0 || days > 0) {
+    Serial.print(hours);
+    Serial.print("h ");
+  }
+  Serial.print(minutes);
+  Serial.print("m ");
+  Serial.print(seconds);
+  Serial.println("s");
+  Serial.println();
+  
+  // GPS Data
+  Serial.print("Latitude:     ");
+  Serial.print(msg.latitude, 6);
+  Serial.println("°");
+  Serial.print("Longitude:    ");
+  Serial.print(msg.longitude, 6);
+  Serial.println("°");
+  Serial.print("Altitude:     ");
+  Serial.print(msg.altitude, 1);
+  Serial.println(" m");
+  Serial.print("Speed:        ");
+  Serial.print(msg.speed, 1);
+  Serial.println(" km/h");
+  Serial.print("Satellites:   ");
   Serial.println(msg.sats);
-  Serial.print("Battery: ");
+  Serial.print("HDOP:         ");
+  Serial.println(msg.hdop, 1);
+  
+  // Power & Signal
+  Serial.print("Battery:      ");
   Serial.print(msg.batteryVoltage, 2);
-  Serial.print("V  LED: ");
-  Serial.print(msg.ledOn ? "ON" : "OFF");
-  Serial.print("  Buzzer: ");
+  Serial.println(" V");
+  Serial.print("RSSI:         ");
+  Serial.print(rssi, 1);
+  Serial.println(" dBm");
+  Serial.print("SNR:          ");
+  Serial.print(snr, 1);
+  Serial.println(" dB");
+  
+  // Control Status
+  Serial.print("LED:          ");
+  Serial.println(msg.ledOn ? "ON" : "OFF");
+  Serial.print("Buzzer:       ");
   Serial.println(msg.buzzerOn ? "ON" : "OFF");
+  Serial.print("Last Control: ");
+  switch(msg.lastControlReceived) {
+    case 0: Serial.println("None"); break;
+    case 1: Serial.println("LED"); break;
+    case 2: Serial.println("Buzzer"); break;
+    case 3: Serial.println("Both"); break;
+    default: Serial.println("Unknown");
+  }
+  
   Serial.println("=======================\n");
 }
 
@@ -876,6 +1274,7 @@ void loopPupStation() {
       stationLocation.longitude = gps.location.lng();
       stationLocation.hdop = gps.hdop.hdop();
       stationLocation.sats = gps.satellites.value();
+      stationLocation.altitude = gps.altitude.isValid() ? gps.altitude.meters() : 0.0f;
       stationLocation.hasValidFix = true;
       stationLocation.lastUpdate = now;
     }
@@ -1119,6 +1518,12 @@ void loopPupStation() {
     
     // Restart receive mode
     radio.startReceive();
+  }
+  
+  // Periodic statistics logging
+  if (now - lastStatsLog >= STATS_LOG_INTERVAL) {
+    lastStatsLog = now;
+    logStats();
   }
   
   // Small delay but don't block too long for web server

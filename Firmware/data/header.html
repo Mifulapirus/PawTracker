@@ -1,0 +1,21 @@
+<h1>🐾 CoqueTracker Station</h1>
+
+<div class='nav-links'>
+  <a href='/' class='nav-link' id='nav-dashboard'>Dashboard</a>
+  <a href='/map.html' class='nav-link' id='nav-map'>Map View</a>
+  <a href='/stats.html' class='nav-link' id='nav-stats'>Statistics</a>
+</div>
+
+<script>
+  // Highlight active nav link based on current page
+  (function() {
+    var path = window.location.pathname;
+    if (path === '/' || path === '/index.html') {
+      document.getElementById('nav-dashboard').classList.add('active');
+    } else if (path === '/map.html') {
+      document.getElementById('nav-map').classList.add('active');
+    } else if (path === '/stats.html') {
+      document.getElementById('nav-stats').classList.add('active');
+    }
+  })();
+</script>

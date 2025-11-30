@@ -1,11 +1,133 @@
 // Initialize map
 var map = L.map('map').setView([0, 0], 2);
 
-// Add OpenStreetMap tiles (free!)
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+// Define tile layers
+var streetMap = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '© OpenStreetMap contributors',
   maxZoom: 19
-}).addTo(map);
+});
+
+var satelliteMap = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+  attribution: 'Tiles © Esri',
+  maxZoom: 19
+});
+
+var terrainMap = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+  attribution: '© OpenTopoMap contributors',
+  maxZoom: 17
+});
+
+// Load saved preference or default to street map
+var savedLayer = localStorage.getItem('mapLayer') || 'street';
+var defaultLayer = streetMap;
+if (savedLayer === 'satellite') defaultLayer = satelliteMap;
+else if (savedLayer === 'terrain') defaultLayer = terrainMap;
+
+defaultLayer.addTo(map);
+
+// Custom layer control (Google Maps style)
+var LayerControl = L.Control.extend({
+  onAdd: function(map) {
+    var container = L.DomUtil.create('div', 'custom-layer-control');
+    container.innerHTML = `
+      <div class="layer-control-button" id="layerControlButton" title="Map Layers">
+        <span class="layer-icon">🗺️</span>
+      </div>
+      <div class="layer-control-menu" id="layerControlMenu" style="display: none;">
+        <div class="layer-option" data-layer="street">
+          <div class="layer-preview street-preview"></div>
+          <div class="layer-name">Street</div>
+        </div>
+        <div class="layer-option" data-layer="satellite">
+          <div class="layer-preview satellite-preview"></div>
+          <div class="layer-name">Satellite</div>
+        </div>
+        <div class="layer-option" data-layer="terrain">
+          <div class="layer-preview terrain-preview"></div>
+          <div class="layer-name">Terrain</div>
+        </div>
+      </div>
+    `;
+    
+    // Prevent map interactions when clicking control
+    L.DomEvent.disableClickPropagation(container);
+    L.DomEvent.disableScrollPropagation(container);
+    
+    return container;
+  }
+});
+
+var layerControl = new LayerControl({ position: 'bottomleft' });
+layerControl.addTo(map);
+
+// Current active layer
+var currentLayer = savedLayer;
+
+// Toggle layer menu
+setTimeout(function() {
+  var button = document.getElementById('layerControlButton');
+  var menu = document.getElementById('layerControlMenu');
+  
+  if (button && menu) {
+    button.addEventListener('click', function(e) {
+      e.stopPropagation();
+      var isVisible = menu.style.display === 'block';
+      menu.style.display = isVisible ? 'none' : 'block';
+    });
+    
+    // Close menu when clicking outside
+    document.addEventListener('click', function(e) {
+      if (!button.contains(e.target) && !menu.contains(e.target)) {
+        menu.style.display = 'none';
+      }
+    });
+    
+    // Handle layer selection
+    var layerOptions = menu.querySelectorAll('.layer-option');
+    layerOptions.forEach(function(option) {
+      option.addEventListener('click', function() {
+        var layer = this.getAttribute('data-layer');
+        switchLayer(layer);
+        menu.style.display = 'none';
+      });
+    });
+    
+    // Highlight active layer
+    updateActiveLayer();
+  }
+}, 100);
+
+function switchLayer(layerName) {
+  map.removeLayer(streetMap);
+  map.removeLayer(satelliteMap);
+  map.removeLayer(terrainMap);
+  
+  if (layerName === 'street') {
+    streetMap.addTo(map);
+  } else if (layerName === 'satellite') {
+    satelliteMap.addTo(map);
+  } else if (layerName === 'terrain') {
+    terrainMap.addTo(map);
+  }
+  
+  currentLayer = layerName;
+  localStorage.setItem('mapLayer', layerName);
+  updateActiveLayer();
+}
+
+function updateActiveLayer() {
+  var menu = document.getElementById('layerControlMenu');
+  if (menu) {
+    var options = menu.querySelectorAll('.layer-option');
+    options.forEach(function(option) {
+      if (option.getAttribute('data-layer') === currentLayer) {
+        option.classList.add('active');
+      } else {
+        option.classList.remove('active');
+      }
+    });
+  }
+}
 
 // Custom icons
 var beaconIcon = L.icon({
@@ -152,24 +274,12 @@ function updateBeaconData() {
                       'Lon: ' + stationLon.toFixed(6) + '°<br>' +
                       'Satellites: ' + data.station.sats);
         }
-        
-        document.getElementById('stationInfo').textContent = 
-          stationLat.toFixed(6) + '°, ' + stationLon.toFixed(6) + '° (' + data.station.sats + ' sats)';
       } else {
         // Remove marker if it exists and we lost fix
         if (stationMarker) {
           map.removeLayer(stationMarker);
           stationMarker = null;
         }
-        
-        var debugInfo = 'Getting GPS fix...';
-        if (data.station) {
-          debugInfo += ' (sats: ' + data.station.sats + ')';
-          console.log('Station GPS data present but no valid fix:', data.station);
-        } else {
-          console.log('No station data in API response');
-        }
-        document.getElementById('stationInfo').textContent = debugInfo;
       }
       
       // Update beacon location - only show if valid fix with satellites and non-zero coordinates
@@ -209,8 +319,43 @@ function updateBeaconData() {
                       'Battery: ' + data.battery.toFixed(2) + ' V');
         }
         
-        document.getElementById('beaconInfo').textContent = 
-          beaconLat.toFixed(6) + '°, ' + beaconLon.toFixed(6) + '° (' + data.sats + ' sats)';
+        // Update speed display
+        if (data.speed !== undefined) {
+          if (data.speed < 0.5) {
+            document.getElementById('dogSpeed').textContent = 'Stationary';
+          } else {
+            document.getElementById('dogSpeed').textContent = data.speed.toFixed(1) + ' km/h';
+          }
+        } else {
+          document.getElementById('dogSpeed').textContent = '--';
+        }
+        
+        // Update relative altitude display
+        if (data.altitude !== undefined && data.station && data.station.hasValidFix) {
+          // Calculate altitude difference (beacon altitude - station altitude)
+          var stationAlt = 0;
+          if (data.station.latitude !== 0 && data.station.longitude !== 0) {
+            // Station has valid GPS, but we need to track station altitude
+            // For now, we'll use beacon altitude as absolute until station altitude is added to API
+            var altDiff = data.altitude; // Will be relative once station altitude is in API
+            
+            if (Math.abs(altDiff) < 1) {
+              document.getElementById('dogAltitude').textContent = 'Same level';
+            } else if (altDiff > 0) {
+              document.getElementById('dogAltitude').textContent = '↑ +' + altDiff.toFixed(1) + ' m higher';
+            } else {
+              document.getElementById('dogAltitude').textContent = '↓ ' + altDiff.toFixed(1) + ' m lower';
+            }
+          } else {
+            // Station has no fix, show absolute altitude
+            document.getElementById('dogAltitude').textContent = data.altitude.toFixed(1) + ' m (absolute)';
+          }
+        } else if (data.altitude !== undefined) {
+          // No station data, show absolute altitude
+          document.getElementById('dogAltitude').textContent = data.altitude.toFixed(1) + ' m (absolute)';
+        } else {
+          document.getElementById('dogAltitude').textContent = '--';
+        }
       } else {
         // Remove marker if it exists and we lost fix
         if (beaconMarker) {
@@ -218,11 +363,8 @@ function updateBeaconData() {
           beaconMarker = null;
         }
         
-        if (data.hasData) {
-          document.getElementById('beaconInfo').textContent = 'Waiting for GPS fix... (' + data.sats + ' sats)';
-        } else {
-          document.getElementById('beaconInfo').textContent = 'Waiting for beacon...';
-        }
+        document.getElementById('dogSpeed').textContent = data.hasData ? 'No GPS fix' : '--';
+        document.getElementById('dogAltitude').textContent = data.hasData ? 'No GPS fix' : '--';
       }
       
       updateMapView();

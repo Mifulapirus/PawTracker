@@ -24,8 +24,55 @@ function updateData() {
         // Beacon Status
         document.getElementById('sats').textContent = data.sats;
         document.getElementById('hdop').textContent = data.hdop.toFixed(1);
+        
+        // Speed
+        if (data.speed !== undefined) {
+          if (data.speed < 0.5) {
+            document.getElementById('speed').textContent = 'Stationary';
+          } else {
+            document.getElementById('speed').textContent = data.speed.toFixed(1) + ' km/h';
+          }
+        } else {
+          document.getElementById('speed').textContent = '--';
+        }
+        
+        // Altitude
+        if (data.altitude !== undefined) {
+          document.getElementById('altitude').textContent = data.altitude.toFixed(1) + ' m';
+        } else {
+          document.getElementById('altitude').textContent = '--';
+        }
+        
         document.getElementById('battery').textContent = data.battery.toFixed(2) + ' V';
-        document.getElementById('signal').textContent = data.rssi.toFixed(0) + ' dBm (SNR: ' + data.snr.toFixed(1) + ' dB)';
+        document.getElementById('rssi').textContent = data.rssi.toFixed(0) + ' dBm';
+        document.getElementById('snr').textContent = data.snr.toFixed(1) + ' dB';
+        
+        // Station Status
+        if (data.station) {
+          if (data.station.hasValidFix) {
+            document.getElementById('stationStatus').textContent = 'Fixed';
+            document.getElementById('stationStatus').style.color = '#4ade80';
+          } else {
+            document.getElementById('stationStatus').textContent = 'No Fix';
+            document.getElementById('stationStatus').style.color = '#f87171';
+          }
+          document.getElementById('stationSats').textContent = data.station.sats;
+          document.getElementById('stationHdop').textContent = data.station.hdop.toFixed(1);
+          
+          if (data.station.hasValidFix) {
+            document.getElementById('stationLat').textContent = data.station.latitude.toFixed(6) + '°';
+            document.getElementById('stationLon').textContent = data.station.longitude.toFixed(6) + '°';
+          } else {
+            document.getElementById('stationLat').textContent = '--';
+            document.getElementById('stationLon').textContent = '--';
+          }
+        } else {
+          document.getElementById('stationStatus').textContent = 'No Data';
+          document.getElementById('stationSats').textContent = '--';
+          document.getElementById('stationHdop').textContent = '--';
+          document.getElementById('stationLat').textContent = '--';
+          document.getElementById('stationLon').textContent = '--';
+        }
         
         // Actuators
         let ledStatus = document.getElementById('ledStatus');

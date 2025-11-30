@@ -3,17 +3,12 @@
 <head>
   <meta charset='UTF-8'>
   <meta name='viewport' content='width=device-width, initial-scale=1'>
-  <title>PawTracker Station</title>
+  <title>CoqueTracker Station</title>
   <link rel='stylesheet' href='/style.css'>
 </head>
 <body>
   <div class='container'>
-    <h1>🐾 PawTracker Station</h1>
-    
-    <div class='nav-links'>
-      <a href='/' class='nav-link active'>Dashboard</a>
-      <a href='/map.html' class='nav-link'>Map View</a>
-    </div>
+    <div id='header'></div>
     
     <div id='noData' class='card' style='display:none;'>
       <h2>Waiting for beacon...</h2>
@@ -32,19 +27,39 @@
       </div>
       
       <div class='card'>
-        <h2>Beacon Status</h2>
+        <h2>🐕 Beacon Status (Dog)</h2>
         <div class='label'>Satellites</div>
         <div class='value' id='sats'>--</div>
         <div class='label'>HDOP (accuracy)</div>
         <div class='value' id='hdop'>--</div>
+        <div class='label'>Speed</div>
+        <div class='value' id='speed'>--</div>
+        <div class='label'>Altitude</div>
+        <div class='value' id='altitude'>--</div>
         <div class='label'>Battery</div>
         <div class='value' id='battery'>--</div>
-        <div class='label'>Signal Strength</div>
-        <div class='value' id='signal'>--</div>
+        <div class='label'>Signal Strength (RSSI)</div>
+        <div class='value' id='rssi'>--</div>
+        <div class='label'>Signal Quality (SNR)</div>
+        <div class='value' id='snr'>--</div>
       </div>
       
       <div class='card'>
-        <h2>Actuators</h2>
+        <h2>📱 Station Status (You)</h2>
+        <div class='label'>GPS Status</div>
+        <div class='value' id='stationStatus'>--</div>
+        <div class='label'>Satellites</div>
+        <div class='value' id='stationSats'>--</div>
+        <div class='label'>HDOP (accuracy)</div>
+        <div class='value' id='stationHdop'>--</div>
+        <div class='label'>Latitude</div>
+        <div class='value' id='stationLat'>--</div>
+        <div class='label'>Longitude</div>
+        <div class='value' id='stationLon'>--</div>
+      </div>
+      
+      <div class='card'>
+        <h2>🎮 Actuators</h2>
         <div id='ledStatus' class='status off'>LED: OFF</div>
         <div id='buzzerStatus' class='status off'>Buzzer: OFF</div>
         <div class='label'>Last Command Received</div>
@@ -63,6 +78,12 @@
     </div>
   </div>
   
+  <script>
+    // Load header
+    fetch('/header.html')
+      .then(response => response.text())
+      .then(html => document.getElementById('header').innerHTML = html);
+  </script>
   <script src='/script.js'></script>
 </body>
 </html>
