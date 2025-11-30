@@ -1,0 +1,124 @@
+body {
+  font-family: Arial;
+  margin: 20px;
+  background: #1a1a1a;
+  color: #fff;
+}
+
+.container {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+h1 {
+  color: #4CAF50;
+}
+
+.card {
+  background: #2a2a2a;
+  padding: 20px;
+  margin: 15px 0;
+  border-radius: 8px;
+}
+
+.label {
+  color: #888;
+  font-size: 14px;
+}
+
+.value {
+  font-size: 24px;
+  margin: 10px 0;
+  color: #4CAF50;
+}
+
+.status {
+  display: inline-block;
+  padding: 5px 15px;
+  border-radius: 5px;
+  margin: 5px;
+}
+
+.on {
+  background: #4CAF50;
+  color: #fff;
+}
+
+.off {
+  background: #666;
+  color: #ddd;
+}
+
+.controls {
+  margin-top: 20px;
+}
+
+button {
+  padding: 15px 30px;
+  margin: 10px;
+  font-size: 16px;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.btn-led {
+  background: #FFD700;
+  color: #000;
+}
+
+.btn-buzzer {
+  background: #FF6347;
+  color: #fff;
+}
+
+.btn-reset {
+  background: #ff9800;
+  color: #fff;
+  width: 100%;
+  font-weight: bold;
+  transition: background 0.3s;
+}
+
+.btn-reset:hover {
+  background: #f57c00;
+}
+
+.btn-reset:active {
+  background: #e65100;
+}
+
+.map-link {
+  display: block;
+  margin: 15px 0;
+  padding: 15px;
+  background: #0066cc;
+  color: #fff;
+  text-decoration: none;
+  border-radius: 5px;
+  text-align: center;
+}
+
+.nav-links {
+  display: flex;
+  gap: 15px;
+  margin: 20px 0;
+  flex-wrap: wrap;
+}
+
+.nav-link {
+  padding: 10px 20px;
+  background: #4CAF50;
+  color: white;
+  text-decoration: none;
+  border-radius: 5px;
+  transition: background 0.3s;
+}
+
+.nav-link:hover {
+  background: #45a049;
+}
+
+.nav-link.active {
+  background: #2e7d32;
+}
