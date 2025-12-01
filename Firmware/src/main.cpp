@@ -223,28 +223,22 @@ void logStats() {
     if (file) {
       String header = file.readStringUntil('\n');
       
-      // Skip lines until we're under 75% of max size (leave room for new entries)
-      String keepData = "";
-      size_t targetSize = (MAX_STATS_FILE_SIZE * 3) / 4;
+      // Calculate how many bytes to skip (delete oldest 25%)
+      size_t bytesToSkip = currentSize / 4;
+      size_t bytesSkipped = 0;
       
-      // Read all lines first
-      String allLines[100]; // Buffer for lines
-      int lineCount = 0;
-      while (file.available() && lineCount < 100) {
-        allLines[lineCount++] = file.readStringUntil('\n');
+      // Skip old data by reading and discarding lines
+      while (file.available() && bytesSkipped < bytesToSkip) {
+        String line = file.readStringUntil('\n');
+        bytesSkipped += line.length() + 1; // +1 for newline
+      }
+      
+      // Read remaining data to keep
+      String keepData = "";
+      while (file.available()) {
+        keepData += file.readStringUntil('\n') + "\n";
       }
       file.close();
-      
-      // Keep only the most recent lines that fit
-      int startIdx = 0;
-      for (int i = lineCount - 1; i >= 0; i--) {
-        if (keepData.length() + allLines[i].length() + 2 < targetSize) {
-          keepData = allLines[i] + "\n" + keepData;
-          startIdx = i;
-        } else {
-          break;
-        }
-      }
       
       // Rewrite file with header and kept data
       file = LittleFS.open(STATS_FILE, FILE_WRITE);
@@ -304,6 +298,125 @@ void initStats() {
   // Log initial entry
   lastStatsLog = millis();
   logStats();
+}
+
+// -----------------------------------------------------------------------------
+// History Tracking
+// -----------------------------------------------------------------------------
+
+const char* HISTORY_FILE = "/history.csv";
+const uint32_t MAX_HISTORY_FILE_SIZE = 50 * 1024; // 50KB max (about 1000-1500 entries)
+const uint32_t HISTORY_RETENTION_DAYS = 30; // Keep 30 days of history
+
+struct HistoryEntry {
+  uint32_t timestamp;    // Unix timestamp from GPS
+  float latitude;
+  float longitude;
+  float speed;           // km/h
+  float altitude;        // meters
+  float battery;         // beacon battery voltage
+  float rssi;            // signal strength
+  float snr;             // signal quality
+};
+
+// Log beacon position to history file
+void logBeaconHistory(const BeaconMessage &msg, float rssi, float snr) {
+  // Only log if we have valid GPS time
+  if (!gps.time.isValid() || !gps.date.isValid()) {
+    Serial.println("Skipping history log - no GPS time available");
+    return;
+  }
+  
+  // Create Unix timestamp from GPS date/time
+  struct tm timeinfo;
+  timeinfo.tm_year = gps.date.year() - 1900;
+  timeinfo.tm_mon = gps.date.month() - 1;
+  timeinfo.tm_mday = gps.date.day();
+  timeinfo.tm_hour = gps.time.hour();
+  timeinfo.tm_min = gps.time.minute();
+  timeinfo.tm_sec = gps.time.second();
+  timeinfo.tm_isdst = 0;
+  time_t timestamp = mktime(&timeinfo);
+  
+  // Check current file size before writing
+  File file = LittleFS.open(HISTORY_FILE, FILE_READ);
+  size_t currentSize = 0;
+  if (file) {
+    currentSize = file.size();
+    file.close();
+  }
+  
+  // If file is too large, rotate (remove oldest entries)
+  if (currentSize >= MAX_HISTORY_FILE_SIZE) {
+    file = LittleFS.open(HISTORY_FILE, FILE_READ);
+    if (file) {
+      String header = file.readStringUntil('\n');
+      
+      // Calculate how many bytes to skip (delete oldest 25%)
+      size_t bytesToSkip = currentSize / 4;
+      size_t bytesSkipped = 0;
+      
+      // Skip old data by reading and discarding lines
+      while (file.available() && bytesSkipped < bytesToSkip) {
+        String line = file.readStringUntil('\n');
+        bytesSkipped += line.length() + 1; // +1 for newline
+      }
+      
+      // Read remaining data to keep
+      String keepData = "";
+      while (file.available()) {
+        keepData += file.readStringUntil('\n') + "\n";
+      }
+      file.close();
+      
+      // Rewrite file with header and kept data
+      file = LittleFS.open(HISTORY_FILE, FILE_WRITE);
+      if (file) {
+        file.println(header);
+        file.print(keepData);
+        file.close();
+        Serial.println("History file rotated (FIFO)");
+      }
+    }
+  }
+  
+  // Check if file exists, create with header if not
+  if (!LittleFS.exists(HISTORY_FILE)) {
+    file = LittleFS.open(HISTORY_FILE, FILE_WRITE);
+    if (file) {
+      file.println("timestamp,latitude,longitude,speed,altitude,battery,rssi,snr");
+      file.close();
+      Serial.println("History file created");
+    }
+  }
+  
+  // Open file in append mode
+  file = LittleFS.open(HISTORY_FILE, FILE_APPEND);
+  if (!file) {
+    Serial.println("Failed to open history file for writing");
+    return;
+  }
+  
+  // Write data (compact format with full precision for GPS coordinates)
+  file.print(timestamp);
+  file.print(",");
+  file.print(msg.latitude, 6);   // 6 decimal places for GPS (~11cm precision)
+  file.print(",");
+  file.print(msg.longitude, 6);
+  file.print(",");
+  file.print(msg.speed, 1);
+  file.print(",");
+  file.print(msg.altitude, 1);
+  file.print(",");
+  file.print(msg.batteryVoltage, 2);
+  file.print(",");
+  file.print(rssi, 1);
+  file.print(",");
+  file.println(snr, 1);
+  
+  file.close();
+  
+  Serial.println("Beacon position logged to history");
 }
 
 // -----------------------------------------------------------------------------
@@ -1077,6 +1190,112 @@ void setupWiFiAndWebServer() {
     request->send(200, "application/json", json);
   });
   
+  // History API endpoints - IMPORTANT: More specific routes first!
+  
+  // Export history as GPX file
+  server.on("/api/history/export/gpx", HTTP_GET, [](AsyncWebServerRequest *request){
+    if (!LittleFS.exists(HISTORY_FILE)) {
+      request->send(404, "text/plain", "History file not found");
+      return;
+    }
+    
+    File file = LittleFS.open(HISTORY_FILE, FILE_READ);
+    if (!file) {
+      request->send(500, "text/plain", "Failed to open history file");
+      return;
+    }
+    
+    // Build GPX file
+    String gpx = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
+    gpx += "<gpx version=\"1.1\" creator=\"PawTracker\" xmlns=\"http://www.topografix.com/GPX/1/1\">\n";
+    gpx += "  <trk>\n";
+    gpx += "    <name>PawBeacon Track</name>\n";
+    gpx += "    <trkseg>\n";
+    
+    file.readStringUntil('\n'); // Skip header
+    while (file.available()) {
+      String line = file.readStringUntil('\n');
+      if (line.length() > 0) {
+        // Parse: timestamp,latitude,longitude,speed,altitude,battery,rssi,snr
+        int idx1 = line.indexOf(',');
+        int idx2 = line.indexOf(',', idx1 + 1);
+        int idx3 = line.indexOf(',', idx2 + 1);
+        int idx4 = line.indexOf(',', idx3 + 1);
+        int idx5 = line.indexOf(',', idx4 + 1);
+        
+        if (idx1 > 0 && idx2 > 0 && idx3 > 0 && idx4 > 0 && idx5 > 0) {
+          uint32_t timestamp = line.substring(0, idx1).toInt();
+          String lat = line.substring(idx1 + 1, idx2);
+          String lon = line.substring(idx2 + 1, idx3);
+          String alt = line.substring(idx4 + 1, idx5);
+          
+          // Convert Unix timestamp to ISO 8601
+          time_t ts = timestamp;
+          struct tm* timeinfo = gmtime(&ts);
+          char timeStr[25];
+          strftime(timeStr, sizeof(timeStr), "%Y-%m-%dT%H:%M:%SZ", timeinfo);
+          
+          gpx += "      <trkpt lat=\"" + lat + "\" lon=\"" + lon + "\">\n";
+          gpx += "        <ele>" + alt + "</ele>\n";
+          gpx += "        <time>" + String(timeStr) + "</time>\n";
+          gpx += "      </trkpt>\n";
+        }
+      }
+    }
+    file.close();
+    
+    gpx += "    </trkseg>\n";
+    gpx += "  </trk>\n";
+    gpx += "</gpx>\n";
+    
+    AsyncWebServerResponse *response = request->beginResponse(200, "application/gpx+xml", gpx);
+    response->addHeader("Content-Disposition", "attachment; filename=pawtracker.gpx");
+    request->send(response);
+  });
+  
+  // Export history file as CSV
+  server.on("/api/history/export", HTTP_GET, [](AsyncWebServerRequest *request){
+    if (!LittleFS.exists(HISTORY_FILE)) {
+      request->send(404, "text/plain", "History file not found");
+      return;
+    }
+    
+    File file = LittleFS.open(HISTORY_FILE, FILE_READ);
+    if (!file) {
+      request->send(500, "text/plain", "Failed to open history file");
+      return;
+    }
+    
+    AsyncWebServerResponse *response = request->beginResponse(file, HISTORY_FILE, "text/csv", true);
+    response->addHeader("Content-Disposition", "attachment; filename=history.csv");
+    request->send(response);
+  });
+  
+  // Clear history file
+  server.on("/api/history/clear", HTTP_POST, [](AsyncWebServerRequest *request){
+    LittleFS.remove(HISTORY_FILE);
+    Serial.println("History file cleared");
+    request->send(200, "text/plain", "History cleared");
+  });
+  
+  // Get history as CSV (frontend will parse it)
+  server.on("/api/history", HTTP_GET, [](AsyncWebServerRequest *request){
+    if (!LittleFS.exists(HISTORY_FILE)) {
+      request->send(200, "text/csv", "timestamp,latitude,longitude,speed,altitude,battery,rssi,snr\n");
+      return;
+    }
+    
+    File file = LittleFS.open(HISTORY_FILE, FILE_READ);
+    if (!file) {
+      request->send(500, "text/plain", "Failed to open history file");
+      return;
+    }
+    
+    // Stream the CSV file directly
+    AsyncWebServerResponse *response = request->beginResponse(file, HISTORY_FILE, "text/csv", false);
+    request->send(response);
+  });
+  
   // Handle favicon to prevent 404 errors
   server.on("/favicon.ico", HTTP_GET, [](AsyncWebServerRequest *request){
     // Return empty 204 No Content to prevent errors
@@ -1230,6 +1449,9 @@ void handleIncomingBeacon(const BeaconMessage &msg, float rssi, float snr) {
   }
   
   Serial.println("=======================\n");
+  
+  // Log to history file
+  logBeaconHistory(msg, rssi, snr);
 }
 
 void sendControl(bool ledOn, bool buzzerOn) {

@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>History - PawTracker</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+</head>
+<body>
+  <div class="container">
+    <div id="header"></div>
+
+    <h1>Beacon Location History</h1>
+
+    <div id="map" class="history-map"></div>
+
+    <div class="card">
+      <h2>Playback Controls</h2>
+      <div class="playback-controls">
+        <button id="playBtn" class="btn-export" onclick="playTrack()">▶ Play</button>
+        <button id="pauseBtn" class="pause-btn" onclick="pauseTrack()" disabled>⏸ Pause</button>
+        <button id="stopBtn" class="stop-btn" onclick="stopTrack()" disabled>⏹ Stop</button>
+        
+        <div class="speed-control">
+          <label for="speedSelect">Speed:</label>
+          <select id="speedSelect" onchange="updatePlaybackSpeed()">
+            <option value="0.5">0.5x</option>
+            <option value="1" selected>1x</option>
+            <option value="2">2x</option>
+            <option value="5">5x</option>
+            <option value="10">10x</option>
+          </select>
+        </div>
+      </div>
+
+      <input type="range" id="timeline" class="timeline-slider" min="0" max="100" value="0" oninput="updateTimeline()">
+      <div class="timeline-info">
+        <span id="currentTime">00:00:00</span>
+        <span id="totalTime">00:00:00</span>
+      </div>
+
+      <h2>Statistics</h2>
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="label">Total Distance</div>
+          <div class="value" id="totalDistance">0 km</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Average Speed</div>
+          <div class="value" id="avgSpeed">0 km/h</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Max Speed</div>
+          <div class="value" id="maxSpeed">0 km/h</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Duration</div>
+          <div class="value" id="duration">0:00:00</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Elevation Gain</div>
+          <div class="value" id="elevGain">0 m</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Elevation Loss</div>
+          <div class="value" id="elevLoss">0 m</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Data Points</div>
+          <div class="value" id="dataPoints">0</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Min Battery</div>
+          <div class="value" id="minBattery">0.00 V</div>
+        </div>
+      </div>
+
+      <div class="export-buttons">
+        <button class="btn-export" onclick="exportGPX()">📥 Export GPX</button>
+        <button class="btn-export" onclick="exportCSV()">📥 Export CSV</button>
+        <button class="btn-clear" onclick="clearHistory()">🗑️ Clear History</button>
+      </div>
+    </div>
+
+    <div id="noData" class="card" style="display: none;">
+      <h2>No History Data Available</h2>
+      <p style="color: #c084fc;">Beacon location history will appear here once the station starts receiving beacon transmissions.</p>
+    </div>
+  </div>
+  
+  <script>
+    // Load header
+    fetch('/header.html')
+      .then(response => response.text())
+      .then(html => document.getElementById('header').innerHTML = html);
+  </script>
+  <script src="history.js"></script>
+</body>
+</html>

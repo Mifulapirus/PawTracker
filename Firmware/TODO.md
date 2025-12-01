@@ -3,7 +3,7 @@
 ## Future Features & Improvements
 
 ### 📍 Location History & Tracking
-- **PawBeacon History Tracking**
+- ✅ **PawBeacon History Tracking**
   - Store beacon location history in a file (CSV or JSON format)
   - Include timestamp, lat/lon, speed, altitude for each point
   - Implement data retention policy (e.g., keep last 30 days)
@@ -19,14 +19,14 @@
   - Useful for hiking/mountainous terrain to know if dog is above or below you
   - Add visual indicator (↑↓ arrows) for quick reference
 
-- **Satellite View**
+- ✅ **Satellite View**
   - Add tile layer switcher to map
   - Include satellite/aerial imagery option
   - Options: Street map, Satellite, Terrain, Hybrid
   - Remember user's preference in localStorage
 
 ### 🏃 Movement Analytics
-- **Max Speed Tracking**
+- ✅ **Max Speed Tracking**
   - Track and display maximum speed reached during session
   - Show max speed for current session and all-time record
   - Alert if dog exceeds certain speed threshold (possible escape detection)
@@ -106,6 +106,8 @@
   - Update beacon firmware wirelessly
   
 - **Multi-Beacon Support**
+  - Identify Beacons with their own unique ID
+  - Add a configuration page on Station (and add it to header.html) where we could give human readible names to each Beacon. Save this configuration in a permanent file, we will be adding more to this configuration section and file.
   - Track multiple pets simultaneously
   - Color-coded markers for each pet
   - Individual settings per beacon

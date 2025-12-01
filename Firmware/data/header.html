@@ -3,6 +3,7 @@
 <div class='nav-links'>
   <a href='/' class='nav-link' id='nav-dashboard'>Dashboard</a>
   <a href='/map.html' class='nav-link' id='nav-map'>Map View</a>
+  <a href='/history.html' class='nav-link' id='nav-history'>History</a>
   <a href='/stats.html' class='nav-link' id='nav-stats'>Statistics</a>
 </div>
 
@@ -14,6 +15,8 @@
       document.getElementById('nav-dashboard').classList.add('active');
     } else if (path === '/map.html') {
       document.getElementById('nav-map').classList.add('active');
+    } else if (path === '/history.html') {
+      document.getElementById('nav-history').classList.add('active');
     } else if (path === '/stats.html') {
       document.getElementById('nav-stats').classList.add('active');
     }
