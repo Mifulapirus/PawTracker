@@ -40,6 +40,21 @@ h2 {
   border: 1px solid rgba(255, 105, 180, 0.1);
 }
 
+.card.compact {
+  padding: 12px;
+  margin: 10px 0;
+}
+
+.card.compact .label {
+  font-size: 12px;
+  margin-top: 5px;
+}
+
+.card.compact .value {
+  font-size: 16px;
+  margin: 5px 0;
+}
+
 .label {
   color: #c084fc;
   font-size: 14px;
@@ -616,6 +631,9 @@ button {
   border-radius: 12px;
   box-shadow: 0 4px 12px rgba(0,0,0,0.3);
   margin: 15px 0;
+  position: relative;
+  z-index: 1;
+  background: #ddd;
 }
 
 .playback-controls {
@@ -716,4 +734,108 @@ button {
 
 .beacon-marker {
   animation: pulse 2s infinite;
+}
+
+/* Configuration Page Styles */
+.subtitle {
+  color: #c084fc;
+  margin-top: -10px;
+  margin-bottom: 20px;
+  font-size: 14px;
+}
+
+.beacon-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 15px;
+}
+
+.beacon-table th {
+  background: linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%);
+  color: white;
+  padding: 12px;
+  text-align: left;
+  font-weight: 600;
+}
+
+.beacon-table td {
+  padding: 12px;
+  border-bottom: 1px solid rgba(255, 105, 180, 0.1);
+}
+
+.beacon-table tr:hover {
+  background: rgba(236, 72, 153, 0.05);
+}
+
+.beacon-table code {
+  background: rgba(139, 92, 246, 0.2);
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-family: 'Courier New', monospace;
+  color: #fbbf24;
+}
+
+.form-group {
+  margin: 15px 0;
+}
+
+.form-group label {
+  display: block;
+  color: #c084fc;
+  margin-bottom: 5px;
+  font-weight: 500;
+}
+
+.form-group input {
+  width: 100%;
+  padding: 10px;
+  border: 2px solid rgba(139, 92, 246, 0.3);
+  border-radius: 8px;
+  background: rgba(26, 22, 37, 0.8);
+  color: #fff;
+  font-size: 16px;
+  box-sizing: border-box;
+}
+
+.form-group input:focus {
+  outline: none;
+  border-color: #8b5cf6;
+  box-shadow: 0 0 10px rgba(139, 92, 246, 0.3);
+}
+
+.form-group input:read-only {
+  background: rgba(26, 22, 37, 0.5);
+  color: #fbbf24;
+  cursor: not-allowed;
+}
+
+.button-group {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.button-group button {
+  flex: 1;
+}
+
+.btn-small {
+  padding: 6px 12px;
+  background: linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.btn-small:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(236, 72, 153, 0.4);
+}
+
+.btn-small:active {
+  transform: translateY(0);
 }

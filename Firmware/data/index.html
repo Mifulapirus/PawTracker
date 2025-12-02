@@ -16,64 +16,29 @@
     </div>
     
     <div id='dataContainer' style='display:none;'>
-      <div class='card'>
-        <h2>GPS Location</h2>
-        <div class='label'>Latitude</div>
-        <div class='value' id='latitude'>--</div>
-        <div class='label'>Longitude</div>
-        <div class='value' id='longitude'>--</div>
-        <a class='map-link' id='mapLink' href='#' target='_blank'>📍 Open in Google Maps</a>
-        <div class='label' id='lastUpdate'>Last update: -- seconds ago</div>
-      </div>
+      <!-- Dynamic beacon cards will be inserted here -->
+      <div id='beaconsContainer'></div>
       
-      <div class='card'>
-        <h2>🐕 Beacon Status (Dog)</h2>
-        <div class='label'>Satellites</div>
-        <div class='value' id='sats'>--</div>
-        <div class='label'>HDOP (accuracy)</div>
-        <div class='value' id='hdop'>--</div>
-        <div class='label'>Speed</div>
-        <div class='value' id='speed'>--</div>
-        <div class='label'>Altitude</div>
-        <div class='value' id='altitude'>--</div>
-        <div class='label'>Battery</div>
-        <div class='value' id='battery'>--</div>
-        <div class='label'>Signal Strength (RSSI)</div>
-        <div class='value' id='rssi'>--</div>
-        <div class='label'>Signal Quality (SNR)</div>
-        <div class='value' id='snr'>--</div>
-      </div>
-      
-      <div class='card'>
-        <h2>📱 Station Status (You)</h2>
-        <div class='label'>GPS Status</div>
-        <div class='value' id='stationStatus'>--</div>
-        <div class='label'>Satellites</div>
-        <div class='value' id='stationSats'>--</div>
-        <div class='label'>HDOP (accuracy)</div>
-        <div class='value' id='stationHdop'>--</div>
-        <div class='label'>Latitude</div>
-        <div class='value' id='stationLat'>--</div>
-        <div class='label'>Longitude</div>
-        <div class='value' id='stationLon'>--</div>
-      </div>
-      
-      <div class='card'>
-        <h2>🎮 Actuators</h2>
-        <div id='ledStatus' class='status off'>LED: OFF</div>
-        <div id='buzzerStatus' class='status off'>Buzzer: OFF</div>
-        <div class='label'>Last Command Received</div>
-        <div class='value' id='lastCommand'>--</div>
-        <div class='controls'>
-          <button class='btn-led' onclick='toggleLED()'>Toggle LED</button>
-          <button class='btn-buzzer' onclick='toggleBuzzer()'>Toggle Buzzer</button>
+      <div class='card compact'>
+        <h2>📱 Station Status</h2>
+        <div style='display: grid; grid-template-columns: 1fr 1fr; gap: 10px;'>
+          <div>
+            <div class='label'>GPS Status</div>
+            <div class='value' id='stationStatus'>--</div>
+          </div>
+          <div>
+            <div class='label'>Satellites</div>
+            <div class='value' id='stationSats'>--</div>
+          </div>
+          <div>
+            <div class='label'>Latitude</div>
+            <div class='value' id='stationLat'>--</div>
+          </div>
+          <div>
+            <div class='label'>Longitude</div>
+            <div class='value' id='stationLon'>--</div>
+          </div>
         </div>
-      </div>
-      
-      <div class='card'>
-        <h2>⚙️ System Settings</h2>
-        <p style='color: #999; margin-bottom: 15px;'>Reset WiFi credentials to connect to a different network</p>
-        <button class='btn-reset' onclick='resetWiFi()'>🔄 Reset WiFi & Reboot</button>
       </div>
     </div>
   </div>

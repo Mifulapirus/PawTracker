@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Beacon Configuration - CoqueTracker</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container" id="header-container"></div>
+
+  <div class="container">
+    <h2>Beacon Configuration</h2>
+    <p class="subtitle">Manage beacon names and settings</p>
+
+    <div class="card">
+      <h3>Known Beacons</h3>
+      <div id="beacon-list">
+        <p style="color: var(--accent-purple); text-align: center;">Loading beacons...</p>
+      </div>
+    </div>
+
+    <div class="card" id="edit-card" style="display: none;">
+      <h3>Edit Beacon Name</h3>
+      <form id="edit-form">
+        <div class="form-group">
+          <label for="beacon-id">Beacon ID:</label>
+          <input type="text" id="beacon-id" readonly>
+        </div>
+        <div class="form-group">
+          <label for="beacon-name">Name:</label>
+          <input type="text" id="beacon-name" placeholder="Enter beacon name" required maxlength="32">
+        </div>
+        <div class="button-group">
+          <button type="submit" class="btn-export">Save</button>
+          <button type="button" class="btn-clear" id="cancel-btn">Cancel</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>⚙️ System Settings</h2>
+      
+      <div class="form-group">
+        <label for="disconnect-timeout">Beacon Disconnect Timeout (seconds):</label>
+        <p style="color: #999; font-size: 0.9em; margin: 5px 0;">Beacons will be marked as disconnected if not seen within this time</p>
+        <input type="number" id="disconnect-timeout" min="10" max="600" step="1" value="60">
+        <button class="btn-export" style="margin-top: 10px; width: auto;" onclick="saveTimeout()">Save Timeout</button>
+      </div>
+      
+      <div style="border-top: 1px solid rgba(255, 105, 180, 0.2); margin: 20px 0; padding-top: 20px;">
+        <p style="color: #999; margin-bottom: 15px;">Reset WiFi credentials to connect to a different network</p>
+        <button class="btn-reset" onclick="resetWiFi()">🔄 Reset WiFi & Reboot</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Load header
+    fetch('/header.html')
+      .then(response => response.text())
+      .then(data => {
+        document.getElementById('header-container').innerHTML = data;
+      });
+
+    let beacons = [];
+    let editingBeaconId = null;
+    let serverTime = 0;
+
+    // Load beacons
+    function loadBeacons() {
+      fetch('/api/beacons/list')
+        .then(response => response.json())
+        .then(data => {
+          beacons = data.beacons;
+          serverTime = data.serverTime || 0;
+          if (data.disconnectTimeout) {
+            document.getElementById('disconnect-timeout').value = data.disconnectTimeout;
+          }
+          renderBeaconList();
+        })
+        .catch(error => {
+          console.error('Error loading beacons:', error);
+          document.getElementById('beacon-list').innerHTML = 
+            '<p style="color: var(--accent-pink); text-align: center;">Failed to load beacons</p>';
+        });
+    }
+
+    // Render beacon list
+    function renderBeaconList() {
+      const listEl = document.getElementById('beacon-list');
+      
+      if (beacons.length === 0) {
+        listEl.innerHTML = '<p style="color: var(--accent-purple); text-align: center;">No beacons detected yet. Beacons will appear here once they start transmitting.</p>';
+        return;
+      }
+
+      const disconnectTimeoutMs = parseInt(document.getElementById('disconnect-timeout').value) * 1000;
+      let html = '<table class="beacon-table"><thead><tr><th>Beacon ID</th><th>Name</th><th>Status</th><th>Last Seen</th><th>Actions</th></tr></thead><tbody>';
+      
+      beacons.forEach(beacon => {
+        const age = Math.floor((serverTime - beacon.lastSeen) / 1000);
+        let lastSeenText = '';
+        
+        if (age < 60) {
+          lastSeenText = `${age}s ago`;
+        } else if (age < 3600) {
+          lastSeenText = `${Math.floor(age / 60)}m ago`;
+        } else {
+          lastSeenText = `${Math.floor(age / 3600)}h ago`;
+        }
+
+        const isDisconnected = beacon.hasData && ((serverTime - beacon.lastSeen) > disconnectTimeoutMs);
+        const rowStyle = isDisconnected ? 'opacity: 0.4; color: #999;' : '';
+        const statusText = isDisconnected ? '❌ Disconnected' : '✓ Connected';
+        const statusColor = isDisconnected ? '#f87171' : '#4ade80';
+
+        html += `
+          <tr style="${rowStyle}">
+            <td><code>${beacon.id}</code></td>
+            <td><strong>${beacon.name}</strong></td>
+            <td style="color: ${statusColor};">${statusText}</td>
+            <td>${beacon.hasData ? lastSeenText : 'Never'}</td>
+            <td><button class="btn-small" onclick="editBeacon('${beacon.id}')">Edit</button></td>
+          </tr>
+        `;
+      });
+      
+      html += '</tbody></table>';
+      listEl.innerHTML = html;
+    }
+
+    // Edit beacon
+    function editBeacon(beaconId) {
+      const beacon = beacons.find(b => b.id === beaconId);
+      if (!beacon) return;
+
+      editingBeaconId = beaconId;
+      document.getElementById('beacon-id').value = beaconId;
+      document.getElementById('beacon-name').value = beacon.name;
+      document.getElementById('edit-card').style.display = 'block';
+      document.getElementById('beacon-name').focus();
+    }
+
+    // Cancel edit
+    document.getElementById('cancel-btn').addEventListener('click', () => {
+      editingBeaconId = null;
+      document.getElementById('edit-card').style.display = 'none';
+      document.getElementById('edit-form').reset();
+    });
+
+    // Save beacon name
+    document.getElementById('edit-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      
+      const newName = document.getElementById('beacon-name').value.trim();
+      if (!newName) return;
+
+      const data = JSON.stringify({
+        id: editingBeaconId,
+        name: newName
+      });
+
+      fetch('/api/beacons/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: data
+      })
+      .then(response => {
+        if (response.ok) {
+          // Update local data
+          const beacon = beacons.find(b => b.id === editingBeaconId);
+          if (beacon) beacon.name = newName;
+          
+          // Hide edit form
+          document.getElementById('edit-card').style.display = 'none';
+          document.getElementById('edit-form').reset();
+          editingBeaconId = null;
+          
+          // Refresh list
+          renderBeaconList();
+        } else {
+          alert('Failed to save beacon name');
+        }
+      })
+      .catch(error => {
+        console.error('Error saving beacon name:', error);
+        alert('Error saving beacon name');
+      });
+    });
+
+    // Initial load
+    loadBeacons();
+    
+    // Refresh beacon list every 5 seconds
+    setInterval(loadBeacons, 5000);
+
+    // Save disconnect timeout
+    function saveTimeout() {
+      const timeout = parseInt(document.getElementById('disconnect-timeout').value);
+      if (timeout < 10 || timeout > 600) {
+        alert('Timeout must be between 10 and 600 seconds');
+        return;
+      }
+      
+      const data = JSON.stringify({ disconnectTimeout: timeout });
+      
+      fetch('/api/settings/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: data
+      })
+      .then(response => {
+        if (response.ok) {
+          alert('✓ Disconnect timeout saved!');
+          loadBeacons(); // Refresh to show new status
+        } else {
+          alert('❌ Failed to save timeout');
+        }
+      })
+      .catch(error => {
+        console.error('Error saving timeout:', error);
+        alert('❌ Error saving timeout');
+      });
+    }
+    
+    // Reset WiFi
+    function resetWiFi() {
+      if (confirm('Reset WiFi credentials and reboot?')) {
+        fetch('/reset-wifi')
+          .then(() => {
+            alert('WiFi reset! Device will reboot and start WiFi setup.');
+          })
+          .catch(error => {
+            console.error('Error resetting WiFi:', error);
+            alert('Error resetting WiFi');
+          });
+      }
+    }
+  </script>
+</body>
+</html>

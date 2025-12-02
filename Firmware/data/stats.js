@@ -2,6 +2,18 @@
 let batteryChart = null;
 let uptimeChart = null;
 
+// Color palette for beacons
+const beaconColors = [
+  { border: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.1)' },  // Purple
+  { border: '#3b82f6', bg: 'rgba(59, 130, 246, 0.1)' },  // Blue
+  { border: '#10b981', bg: 'rgba(16, 185, 129, 0.1)' },  // Green
+  { border: '#f59e0b', bg: 'rgba(245, 158, 11, 0.1)' },  // Orange
+  { border: '#ef4444', bg: 'rgba(239, 68, 68, 0.1)' },   // Red
+  { border: '#06b6d4', bg: 'rgba(6, 182, 212, 0.1)' },   // Cyan
+  { border: '#a855f7', bg: 'rgba(168, 85, 247, 0.1)' },  // Violet
+  { border: '#14b8a6', bg: 'rgba(20, 184, 166, 0.1)' }   // Teal
+];
+
 // Initialize charts
 function initCharts() {
   // Battery Chart
@@ -18,17 +30,10 @@ function initCharts() {
           backgroundColor: 'rgba(236, 72, 153, 0.1)',
           borderWidth: 2,
           tension: 0.4,
-          fill: true
-        },
-        {
-          label: 'Beacon Battery (V)',
-          data: [],
-          borderColor: '#8b5cf6',
-          backgroundColor: 'rgba(139, 92, 246, 0.1)',
-          borderWidth: 2,
-          tension: 0.4,
-          fill: true
+          fill: true,
+          spanGaps: true  // Connect points even with null values
         }
+        // Beacon datasets will be added dynamically
       ]
     },
     options: {
@@ -218,44 +223,77 @@ function updateMemoryStats(data) {
     const heapUsagePercent = ((data.memory.totalHeap - data.memory.freeHeap) / data.memory.totalHeap * 100).toFixed(1);
     document.getElementById('heapUsage').textContent = heapUsagePercent + '%';
     
-    document.getElementById('statsFileSize').textContent = formatBytes(data.memory.statsFileSize);
-    document.getElementById('sketchSize').textContent = formatBytes(data.memory.sketchSize);
-    document.getElementById('freeSketch').textContent = formatBytes(data.memory.freeSketch);
+    document.getElementById('configFileSize').textContent = formatBytes(data.memory.configFileSize || 0);
+    document.getElementById('historyFileSize').textContent = formatBytes(data.memory.historyFileSize || 0);
+    document.getElementById('statsFileSize').textContent = formatBytes(data.memory.statsFileSize || 0);
   }
 }
 
 // Update current statistics
-function updateCurrentStats(data) {
+function updateCurrentStats(data, dataResponse) {
   // Station stats
   if (data.station) {
-    document.getElementById('stationUptime').textContent = formatUptime(data.station.uptime);
-    document.getElementById('stationBattery').textContent = data.station.battery.toFixed(2) + 'V';
+    document.getElementById('stationUptime').textContent = formatUptime(data.station.uptime || 0);
+    document.getElementById('stationBattery').textContent = data.station.battery ? data.station.battery.toFixed(2) + 'V' : '--';
     document.getElementById('stationReboots').textContent = data.station.rebootCount || 0;
   }
   
-  // Beacon stats
-  if (data.beacon) {
-    const lastSeen = data.beacon.lastSeen || 0;
-    if (lastSeen === 0) {
-      document.getElementById('beaconLastSeen').textContent = 'Never';
-    } else if (lastSeen < 60) {
-      document.getElementById('beaconLastSeen').textContent = lastSeen + 's ago';
-    } else if (lastSeen < 3600) {
-      document.getElementById('beaconLastSeen').textContent = Math.floor(lastSeen / 60) + 'm ago';
-    } else {
-      document.getElementById('beaconLastSeen').textContent = Math.floor(lastSeen / 3600) + 'h ago';
-    }
+  // Render beacon cards dynamically
+  const beaconsContainer = document.getElementById('beaconsStatsContainer');
+  beaconsContainer.innerHTML = '';
+  
+  if (dataResponse && dataResponse.beacons && dataResponse.beacons.length > 0) {
+    const disconnectTimeout = dataResponse.disconnectTimeout ? dataResponse.disconnectTimeout * 1000 : 60000;
     
-    document.getElementById('beaconBattery').textContent = data.beacon.battery.toFixed(2) + 'V';
-    
-    // Signal quality percentage
-    const signalPercent = Math.max(0, Math.min(100, Math.round((data.beacon.rssi + 120) * 100 / 90)));
-    let signalText = signalPercent + '%';
-    if (signalPercent >= 70) signalText += ' (Excellent)';
-    else if (signalPercent >= 40) signalText += ' (Good)';
-    else if (signalPercent > 0) signalText += ' (Poor)';
-    else signalText = 'No Signal';
-    document.getElementById('beaconSignal').textContent = signalText;
+    dataResponse.beacons.forEach(beacon => {
+      const ageMs = dataResponse.serverTime - beacon.lastUpdate;
+      const age = Math.floor(ageMs / 1000);
+      const isDisconnected = ageMs > disconnectTimeout;
+      
+      let lastSeenText = '';
+      if (age === 0) {
+        lastSeenText = 'Never';
+      } else if (age < 60) {
+        lastSeenText = age + 's ago';
+      } else if (age < 3600) {
+        lastSeenText = Math.floor(age / 60) + 'm ago';
+      } else {
+        lastSeenText = Math.floor(age / 3600) + 'h ago';
+      }
+      
+      // Signal quality percentage
+      const signalPercent = Math.max(0, Math.min(100, Math.round((beacon.rssi + 120) * 100 / 90)));
+      let signalText = signalPercent + '%';
+      if (signalPercent >= 70) signalText += ' (Excellent)';
+      else if (signalPercent >= 40) signalText += ' (Good)';
+      else if (signalPercent > 0) signalText += ' (Poor)';
+      else signalText = 'No Signal';
+      
+      const statCard = document.createElement('div');
+      statCard.className = 'stat-card';
+      if (isDisconnected) {
+        statCard.style.opacity = '0.4';
+        statCard.style.filter = 'grayscale(50%)';
+      }
+      
+      statCard.innerHTML = `
+        <h3>🐕 ${beacon.name} ${isDisconnected ? '<span style="color: #f87171; font-size: 0.7em;">(DISCONNECTED)</span>' : ''}</h3>
+        <div class='stat-item'>
+          <span class='stat-label'>Last Seen</span>
+          <span class='stat-value'>${lastSeenText}</span>
+        </div>
+        <div class='stat-item'>
+          <span class='stat-label'>Battery Voltage</span>
+          <span class='stat-value'>${beacon.battery ? beacon.battery.toFixed(2) + 'V' : '--'}</span>
+        </div>
+        <div class='stat-item'>
+          <span class='stat-label'>Signal Quality</span>
+          <span class='stat-value'>${signalText}</span>
+        </div>
+      `;
+      
+      beaconsContainer.appendChild(statCard);
+    });
   }
 }
 
@@ -285,30 +323,78 @@ function updateDetailedStats(data) {
 }
 
 // Update charts with historical data
-function updateCharts(data) {
+function updateCharts(data, dataResponse) {
   if (!data.history || !data.history.length) return;
   
-  // Prepare data for charts
-  const labels = [];
+  // Get beacon names from dataResponse
+  const beaconNames = {};
+  if (dataResponse && dataResponse.beacons) {
+    dataResponse.beacons.forEach(beacon => {
+      beaconNames[beacon.id] = beacon.name;
+    });
+  }
+  
+  // Group data by time buckets (5 minute intervals) for last 24 entries
+  const timeBuckets = {};
+  const beaconLastValues = {}; // Track last known value for each beacon
+  
+  data.history.forEach((entry, index) => {
+    if (index < data.history.length - 24) return;
+    
+    const date = new Date(entry.timestamp * 1000);
+    const timeLabel = date.getHours() + ':' + String(date.getMinutes()).padStart(2, '0');
+    
+    if (!timeBuckets[timeLabel]) {
+      timeBuckets[timeLabel] = {
+        stationBattery: entry.stationBattery || null,
+        beacons: {}
+      };
+    }
+    
+    // Update station battery (use latest value for this time bucket)
+    if (entry.stationBattery) {
+      timeBuckets[timeLabel].stationBattery = entry.stationBattery;
+    }
+    
+    // Update beacon battery
+    if (entry.beaconId && entry.beaconBattery) {
+      timeBuckets[timeLabel].beacons[entry.beaconId] = entry.beaconBattery;
+      beaconLastValues[entry.beaconId] = entry.beaconBattery;
+    }
+  });
+  
+  // Convert to arrays for Chart.js
+  const labels = Object.keys(timeBuckets);
   const stationBatteryData = [];
-  const beaconBatteryData = [];
+  const beaconBatteryDataMap = {};
+  
+  // Initialize beacon data arrays
+  Object.keys(beaconLastValues).forEach(beaconId => {
+    beaconBatteryDataMap[beaconId] = [];
+  });
+  
+  // Fill data arrays, using last known value for beacons when no data in bucket
+  const currentValues = {}; // Track current value for each beacon
+  labels.forEach(timeLabel => {
+    const bucket = timeBuckets[timeLabel];
+    stationBatteryData.push(bucket.stationBattery);
+    
+    // For each beacon, use value from bucket or carry forward last value
+    Object.keys(beaconBatteryDataMap).forEach(beaconId => {
+      if (bucket.beacons[beaconId] !== undefined) {
+        currentValues[beaconId] = bucket.beacons[beaconId];
+      }
+      beaconBatteryDataMap[beaconId].push(currentValues[beaconId] || null);
+    });
+  });
+  
+  // Uptime data processing (unchanged)
   const uptimeLabels = [];
   const uptimeData = [];
   const beaconDataPoints = [];
   
-  // Process history data (last 24 hours for battery, last 7 days for uptime)
-  data.history.forEach((entry, index) => {
+  data.history.forEach((entry) => {
     const date = new Date(entry.timestamp * 1000);
-    const timeLabel = date.getHours() + ':' + String(date.getMinutes()).padStart(2, '0');
-    
-    // Battery data (show last 24 entries)
-    if (index >= data.history.length - 24) {
-      labels.push(timeLabel);
-      stationBatteryData.push(entry.stationBattery || null);
-      beaconBatteryData.push(entry.beaconBattery || null);
-    }
-    
-    // Uptime data (aggregate by day for last 7 days)
     const dayLabel = (date.getMonth() + 1) + '/' + date.getDate();
     const uptimeHours = (entry.stationUptime || 0) / 3600;
     const hasBeaconData = entry.beaconBattery && entry.beaconBattery > 0;
@@ -329,10 +415,33 @@ function updateCharts(data) {
     }
   });
   
-  // Update battery chart
+  // Update battery chart datasets
   batteryChart.data.labels = labels;
   batteryChart.data.datasets[0].data = stationBatteryData;
-  batteryChart.data.datasets[1].data = beaconBatteryData;
+  
+  // Remove old beacon datasets and add new ones
+  batteryChart.data.datasets = batteryChart.data.datasets.slice(0, 1); // Keep only station
+  
+  // Add dataset for each beacon
+  let colorIndex = 0;
+  Object.keys(beaconBatteryDataMap).forEach(beaconId => {
+    const color = beaconColors[colorIndex % beaconColors.length];
+    const beaconName = beaconNames[beaconId] || `Beacon ${beaconId.substring(0, 4)}`;
+    
+    batteryChart.data.datasets.push({
+      label: beaconName + ' Battery (V)',
+      data: beaconBatteryDataMap[beaconId],
+      borderColor: color.border,
+      backgroundColor: color.bg,
+      borderWidth: 2,
+      tension: 0.4,
+      fill: true,
+      spanGaps: true  // Connect points even when some data is missing
+    });
+    
+    colorIndex++;
+  });
+  
   batteryChart.update('none'); // Update without animation for smoother updates
   
   // Update uptime chart
@@ -344,13 +453,26 @@ function updateCharts(data) {
 
 // Fetch statistics from server
 function fetchStats() {
-  fetch('/api/stats')
-    .then(response => response.json())
-    .then(data => {
-      updateMemoryStats(data);
-      updateCurrentStats(data);
-      updateDetailedStats(data);
-      updateCharts(data);
+  // Fetch both /api/data for beacon info and /api/stats for statistics
+  Promise.all([
+    fetch('/api/data').then(r => r.json()),
+    fetch('/api/stats').then(r => r.json()),
+    fetch('/api/beacons/list').then(r => r.json())
+  ])
+    .then(([dataResponse, statsResponse, beaconsConfig]) => {
+      // Merge disconnect timeout from config
+      if (beaconsConfig.disconnectTimeout) {
+        dataResponse.disconnectTimeout = beaconsConfig.disconnectTimeout;
+      }
+      if (beaconsConfig.serverTime) {
+        dataResponse.serverTime = beaconsConfig.serverTime;
+      }
+      
+      // Update stats using /api/stats data
+      updateMemoryStats(statsResponse);
+      updateCurrentStats(statsResponse, dataResponse);
+      updateDetailedStats(statsResponse);
+      updateCharts(statsResponse, dataResponse);
     })
     .catch(error => {
       console.error('Error fetching stats:', error);

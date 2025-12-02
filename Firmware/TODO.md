@@ -4,13 +4,13 @@
 
 ### 📍 Location History & Tracking
 - ✅ **PawBeacon History Tracking**
-  - Store beacon location history in a file (CSV or JSON format)
-  - Include timestamp, lat/lon, speed, altitude for each point
+  - ✅ Store beacon location history in a file (CSV or JSON format)
+  - ✅ Include timestamp, lat/lon, speed, altitude for each point
   - Implement data retention policy (e.g., keep last 30 days)
   - Add date/time range selector in web interface
   - Visualize historical path on map with playback controls on a new web page and update header.html to add a button for it
   - Show statistics: total distance traveled, average speed, time in motion
-  - Export history data as GPX or KML for use in other mapping apps
+  - ✅ Export history data as GPX or KML for use in other mapping apps
 
 ### 📊 Enhanced Map Features
 - **Relative Altitude Display**
@@ -20,14 +20,14 @@
   - Add visual indicator (↑↓ arrows) for quick reference
 
 - ✅ **Satellite View**
-  - Add tile layer switcher to map
-  - Include satellite/aerial imagery option
-  - Options: Street map, Satellite, Terrain, Hybrid
+  - ✅ Add tile layer switcher to map
+  - ✅ Include satellite/aerial imagery option
+  - ✅ Options: Street map, Satellite, Terrain, Hybrid
   - Remember user's preference in localStorage
 
 ### 🏃 Movement Analytics
 - ✅ **Max Speed Tracking**
-  - Track and display maximum speed reached during session
+  - ✅ Track and display maximum speed reached during session
   - Show max speed for current session and all-time record
   - Alert if dog exceeds certain speed threshold (possible escape detection)
   - Reset max speed at start of new tracking session
@@ -57,16 +57,16 @@
   - Battery history graph
 
 - ✅ **Uptime & Battery Status Tracking**
-  - Log uptime and battery voltage over time to persistent storage (LittleFS)
-  - Store data in CSV or JSON format for both Station and Beacon
-  - Include timestamps, uptime duration, battery voltage readings
-  - Implement circular buffer/data retention (e.g., last 7 days)
-  - New "Statistics" web page with interactive charts
-  - Visualize uptime trends: total uptime, reboot events, uptime percentage
-  - Visualize battery health: voltage over time, discharge rate, charge cycles
+  - ✅ Log uptime and battery voltage over time to persistent storage (LittleFS)
+  - ✅ Store data in CSV or JSON format for both Station and Beacon
+  - ✅ Include timestamps, uptime duration, battery voltage readings
+  - ✅ Implement circular buffer/data retention (e.g., last 7 days)
+  - ✅ New "Statistics" web page with interactive charts
+  - ✅ Visualize uptime trends: total uptime, reboot events, uptime percentage
+  - ✅ Visualize battery health: voltage over time, discharge rate, charge cycles
   - Show system health metrics: longest uptime session, average battery voltage
   - Export stats data for external analysis
-  - Data persists across reboots using LittleFS file storage
+  - ✅ Data persists across reboots using LittleFS file storage
 
 ### 🔔 Alerts & Notifications
 - **Geofencing**
@@ -105,16 +105,16 @@
   - Over-the-air firmware updates
   - Update beacon firmware wirelessly
   
-- **Multi-Beacon Support**
-  - Identify Beacons with their own unique ID
+- ✅ **Multi-Beacon Support**
+  - Identify Beacons with their own unique ID (using ESP32 chip ID)
   - Add a configuration page on Station (and add it to header.html) where we could give human readible names to each Beacon. Save this configuration in a permanent file, we will be adding more to this configuration section and file.
   - Track multiple pets simultaneously
-  - Color-coded markers for each pet
-  - Individual settings per beacon
+  - Color-coded markers for each pet on map
+  - Individual settings per beacon (control messages can target specific beacons)
 
 ### 🔐 Security & Backup
 - **Data Export**
-  - Export all tracking data
+  - ✅ Export all tracking data
   - Backup/restore configuration
   
 - **Authentication**

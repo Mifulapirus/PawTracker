@@ -33,18 +33,18 @@
         </div>
         
         <div class='stat-card'>
-          <h3>💿 Flash & PSRAM</h3>
+          <h3>💾 Permanent Files</h3>
           <div class='stat-item'>
-            <span class='stat-label'>Stats File Size</span>
+            <span class='stat-label'>Config File</span>
+            <span class='stat-value' id='configFileSize'>--</span>
+          </div>
+          <div class='stat-item'>
+            <span class='stat-label'>History File</span>
+            <span class='stat-value' id='historyFileSize'>--</span>
+          </div>
+          <div class='stat-item'>
+            <span class='stat-label'>Stats File</span>
             <span class='stat-value' id='statsFileSize'>--</span>
-          </div>
-          <div class='stat-item'>
-            <span class='stat-label'>Sketch Size</span>
-            <span class='stat-value' id='sketchSize'>--</span>
-          </div>
-          <div class='stat-item'>
-            <span class='stat-label'>Free Sketch</span>
-            <span class='stat-value' id='freeSketch'>--</span>
           </div>
         </div>
       </div>
@@ -52,7 +52,7 @@
     
     <div class='card'>
       <h2>📊 System Statistics</h2>
-      <p style='color: #999; margin-bottom: 15px;'>Real-time uptime and battery monitoring for Station and Beacon</p>
+      <p style='color: #999; margin-bottom: 15px;'>Real-time uptime and battery monitoring for Station and Beacons</p>
       
       <div class='stats-grid'>
         <div class='stat-card'>
@@ -71,21 +71,8 @@
           </div>
         </div>
         
-        <div class='stat-card'>
-          <h3>🐕 Beacon</h3>
-          <div class='stat-item'>
-            <span class='stat-label'>Last Seen</span>
-            <span class='stat-value' id='beaconLastSeen'>--</span>
-          </div>
-          <div class='stat-item'>
-            <span class='stat-label'>Battery Voltage</span>
-            <span class='stat-value' id='beaconBattery'>--</span>
-          </div>
-          <div class='stat-item'>
-            <span class='stat-label'>Signal Quality</span>
-            <span class='stat-value' id='beaconSignal'>--</span>
-          </div>
-        </div>
+        <!-- Dynamic beacon cards will be inserted here -->
+        <div id='beaconsStatsContainer'></div>
       </div>
     </div>
     

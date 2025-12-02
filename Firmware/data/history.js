@@ -2,7 +2,7 @@
 let map;
 let historyData = [];
 let currentMarker = null;
-let pathLine = null;
+let pathLines = [];  // Changed to array for multiple beacon paths
 let playbackTimer = null;
 let currentIndex = 0;
 let isPlaying = false;
@@ -23,19 +23,34 @@ const mapLayers = {
 
 // Initialize map
 function initMap() {
-  map = L.map('map').setView([0, 0], 2);
+  console.log("Initializing history map...");
+  const mapContainer = document.getElementById('map');
+  console.log("Map container:", mapContainer, "Dimensions:", mapContainer.offsetWidth, "x", mapContainer.offsetHeight);
   
-  // Add default layer (street)
-  mapLayers.street.addTo(map);
+  map = L.map('map', {
+    center: [0, 0],
+    zoom: 2,
+    zoomControl: true
+  });
   
-  // Add layer control
-  L.control.layers({
-    "Street Map": mapLayers.street,
-    "Satellite": mapLayers.satellite,
-    "Terrain": mapLayers.terrain
+  // Add default layer (street) with explicit maxZoom
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap contributors',
+    maxZoom: 19
   }).addTo(map);
   
-  console.log("History map initialized");
+  console.log("History map initialized, tiles should be loading");
+  
+  // Force map to refresh multiple times to ensure tiles load
+  setTimeout(() => {
+    console.log("First invalidateSize");
+    map.invalidateSize();
+  }, 100);
+  
+  setTimeout(() => {
+    console.log("Second invalidateSize");
+    map.invalidateSize();
+  }, 500);
 }
 
 // Haversine formula for distance calculation (in meters)
@@ -122,44 +137,84 @@ function formatTimestamp(timestamp) {
   return date.toLocaleTimeString();
 }
 
+// Color palette for beacons (same as stats page)
+const beaconPathColors = [
+  '#8b5cf6',  // Purple
+  '#3b82f6',  // Blue  
+  '#10b981',  // Green
+  '#f59e0b',  // Orange
+  '#ef4444',  // Red
+  '#06b6d4',  // Cyan
+  '#a855f7',  // Violet
+  '#14b8a6'   // Teal
+];
+
 // Draw path on map
 function drawPath() {
   if (historyData.length === 0) return;
   
-  // Clear existing path
-  if (pathLine) map.removeLayer(pathLine);
+  // Clear existing paths
+  pathLines.forEach(line => map.removeLayer(line));
+  pathLines = [];
   
-  // Create path coordinates
-  const coords = historyData.map(entry => [entry.latitude, entry.longitude]);
-  
-  // Draw path
-  pathLine = L.polyline(coords, {
-    color: '#3388ff',
-    weight: 3,
-    opacity: 0.7
-  }).addTo(map);
-  
-  // Add start and end markers
-  const startIcon = L.divIcon({
-    html: '<div style="background: #28a745; color: white; border-radius: 50%; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; font-weight: bold;">S</div>',
-    iconSize: [30, 30],
-    className: 'beacon-marker'
+  // Group data by beaconId
+  const beaconPaths = {};
+  historyData.forEach(entry => {
+    const beaconId = entry.beaconId || 'unknown';
+    if (!beaconPaths[beaconId]) {
+      beaconPaths[beaconId] = [];
+    }
+    beaconPaths[beaconId].push(entry);
   });
   
-  const endIcon = L.divIcon({
-    html: '<div style="background: #dc3545; color: white; border-radius: 50%; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; font-weight: bold;">E</div>',
-    iconSize: [30, 30],
-    className: 'beacon-marker'
+  // Draw separate path for each beacon
+  let colorIndex = 0;
+  const allBounds = [];
+  
+  Object.keys(beaconPaths).forEach(beaconId => {
+    const beaconData = beaconPaths[beaconId];
+    if (beaconData.length === 0) return;
+    
+    const color = beaconPathColors[colorIndex % beaconPathColors.length];
+    const coords = beaconData.map(entry => [entry.latitude, entry.longitude]);
+    
+    // Draw path for this beacon
+    const pathLine = L.polyline(coords, {
+      color: color,
+      weight: 3,
+      opacity: 0.7
+    }).addTo(map);
+    
+    pathLine.bindPopup(`<b>Beacon ${beaconId.substring(0, 8)}</b><br>${beaconData.length} points`);
+    pathLines.push(pathLine);
+    allBounds.push(...coords);
+    
+    // Add start marker for this beacon
+    const startIcon = L.divIcon({
+      html: `<div style="background: ${color}; color: white; border-radius: 50%; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; font-weight: bold; border: 2px solid white;">S</div>`,
+      iconSize: [30, 30],
+      className: 'beacon-marker'
+    });
+    
+    const endIcon = L.divIcon({
+      html: `<div style="background: ${color}; color: white; border-radius: 50%; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; font-weight: bold; border: 2px solid #333;">E</div>`,
+      iconSize: [30, 30],
+      className: 'beacon-marker'
+    });
+    
+    L.marker(coords[0], { icon: startIcon }).addTo(map)
+      .bindPopup(`<b>Start - Beacon ${beaconId.substring(0, 8)}</b><br>${formatTimestamp(beaconData[0].timestamp)}`);
+    
+    L.marker(coords[coords.length - 1], { icon: endIcon }).addTo(map)
+      .bindPopup(`<b>End - Beacon ${beaconId.substring(0, 8)}</b><br>${formatTimestamp(beaconData[beaconData.length - 1].timestamp)}`);
+    
+    colorIndex++;
   });
   
-  L.marker(coords[0], { icon: startIcon }).addTo(map)
-    .bindPopup(`<b>Start</b><br>${formatTimestamp(historyData[0].timestamp)}`);
-  
-  L.marker(coords[coords.length - 1], { icon: endIcon }).addTo(map)
-    .bindPopup(`<b>End</b><br>${formatTimestamp(historyData[historyData.length - 1].timestamp)}`);
-  
-  // Fit map to path
-  map.fitBounds(pathLine.getBounds(), { padding: [50, 50] });
+  // Fit map to all paths
+  if (allBounds.length > 0) {
+    map.fitBounds(allBounds, { padding: [50, 50] });
+  }
 }
 
 // Update current position marker
@@ -304,11 +359,38 @@ function parseCSV(csvText) {
     if (line.length === 0) continue;
     
     const parts = line.split(',');
-    if (parts.length >= 8) {
+    // New format: timestamp,beaconId,latitude,longitude,speed,altitude,battery,rssi,snr
+    if (parts.length >= 9) {
+      const lat = parseFloat(parts[2]);
+      const lon = parseFloat(parts[3]);
+      
+      // Skip invalid GPS coordinates (0, 0)
+      if (lat === 0 && lon === 0) continue;
+      
       entries.push({
         timestamp: parseInt(parts[0]),
-        latitude: parseFloat(parts[1]),
-        longitude: parseFloat(parts[2]),
+        beaconId: parts[1].trim(),
+        latitude: lat,
+        longitude: lon,
+        speed: parseFloat(parts[4]),
+        altitude: parseFloat(parts[5]),
+        battery: parseFloat(parts[6]),
+        rssi: parseFloat(parts[7]),
+        snr: parseFloat(parts[8])
+      });
+    } else if (parts.length >= 8) {
+      // Old format fallback: timestamp,latitude,longitude,speed,altitude,battery,rssi,snr
+      const lat = parseFloat(parts[1]);
+      const lon = parseFloat(parts[2]);
+      
+      // Skip invalid GPS coordinates (0, 0)
+      if (lat === 0 && lon === 0) continue;
+      
+      entries.push({
+        timestamp: parseInt(parts[0]),
+        beaconId: '',
+        latitude: lat,
+        longitude: lon,
         speed: parseFloat(parts[3]),
         altitude: parseFloat(parts[4]),
         battery: parseFloat(parts[5]),

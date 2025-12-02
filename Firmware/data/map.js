@@ -144,12 +144,28 @@ var stationIcon = L.icon({
   popupAnchor: [0, -40]
 });
 
-var beaconMarker = null;
+var beaconMarker = null; // Legacy - keep for backward compatibility
+var beaconMarkers = {}; // Map of beaconId -> marker for multiple beacons
+var beaconColors = ['#FF6500', '#EC4899', '#8B5CF6', '#10B981', '#F59E0B', '#EF4444', '#3B82F6', '#14B8A6'];
 var stationMarker = null;
 var browserMarker = null;
 var pathLine = null;
 var hasInitialView = false;
 var watchId = null;
+
+// Create colored beacon icon
+function createBeaconIcon(color) {
+  var svgIcon = '<svg width="30" height="40" xmlns="http://www.w3.org/2000/svg">' +
+    '<circle cx="15" cy="15" r="12" fill="' + color + '" stroke="#fff" stroke-width="2"/>' +
+    '<text x="15" y="21" font-size="16" text-anchor="middle">🐕</text></svg>';
+  // Use encodeURIComponent instead of btoa to handle Unicode characters
+  return L.icon({
+    iconUrl: 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgIcon),
+    iconSize: [30, 40],
+    iconAnchor: [15, 40],
+    popupAnchor: [0, -40]
+  });
+}
 
 // Custom icon for browser location (phone/computer)
 var browserIcon = L.icon({
@@ -282,6 +298,39 @@ function updateBeaconData() {
         }
       }
       
+      // Handle multiple beacons
+      if (data.beacons && data.beacons.length > 0) {
+        var colorIndex = 0;
+        data.beacons.forEach(function(beacon) {
+          var beaconHasValidFix = beacon.hasData && 
+                                  beacon.sats > 0 &&
+                                  beacon.latitude !== 0.0 &&
+                                  beacon.longitude !== 0.0;
+          
+          if (beaconHasValidFix) {
+            var color = beaconColors[colorIndex % beaconColors.length];
+            var marker = beaconMarkers[beacon.id];
+            
+            if (marker) {
+              marker.setLatLng([beacon.latitude, beacon.longitude]);
+            } else {
+              marker = L.marker([beacon.latitude, beacon.longitude], {icon: createBeaconIcon(color)})
+                .addTo(map)
+                .bindPopup('<b>🐕 ' + beacon.name + '</b><br>' +
+                          'Lat: ' + beacon.latitude.toFixed(6) + '°<br>' +
+                          'Lon: ' + beacon.longitude.toFixed(6) + '°<br>' +
+                          'Speed: ' + beacon.speed.toFixed(1) + ' km/h<br>' +
+                          'Battery: ' + beacon.battery.toFixed(2) + ' V');
+              beaconMarkers[beacon.id] = marker;
+            }
+          } else if (beaconMarkers[beacon.id]) {
+            map.removeLayer(beaconMarkers[beacon.id]);
+            delete beaconMarkers[beacon.id];
+          }
+          colorIndex++;
+        });
+      }
+      
       // Update beacon location - only show if valid fix with satellites and non-zero coordinates
       var beaconHasValidFix = data.hasData && 
                               data.sats > 0 &&
@@ -331,27 +380,19 @@ function updateBeaconData() {
         }
         
         // Update relative altitude display
-        if (data.altitude !== undefined && data.station && data.station.hasValidFix) {
+        if (data.altitude !== undefined && data.station && data.station.hasValidFix && data.station.altitude !== undefined) {
           // Calculate altitude difference (beacon altitude - station altitude)
-          var stationAlt = 0;
-          if (data.station.latitude !== 0 && data.station.longitude !== 0) {
-            // Station has valid GPS, but we need to track station altitude
-            // For now, we'll use beacon altitude as absolute until station altitude is added to API
-            var altDiff = data.altitude; // Will be relative once station altitude is in API
-            
-            if (Math.abs(altDiff) < 1) {
-              document.getElementById('dogAltitude').textContent = 'Same level';
-            } else if (altDiff > 0) {
-              document.getElementById('dogAltitude').textContent = '↑ +' + altDiff.toFixed(1) + ' m higher';
-            } else {
-              document.getElementById('dogAltitude').textContent = '↓ ' + altDiff.toFixed(1) + ' m lower';
-            }
+          var altDiff = data.altitude - data.station.altitude;
+          
+          if (Math.abs(altDiff) < 1) {
+            document.getElementById('dogAltitude').textContent = 'Same level';
+          } else if (altDiff > 0) {
+            document.getElementById('dogAltitude').textContent = '↑ +' + altDiff.toFixed(1) + ' m higher';
           } else {
-            // Station has no fix, show absolute altitude
-            document.getElementById('dogAltitude').textContent = data.altitude.toFixed(1) + ' m (absolute)';
+            document.getElementById('dogAltitude').textContent = '↓ ' + Math.abs(altDiff).toFixed(1) + ' m lower';
           }
         } else if (data.altitude !== undefined) {
-          // No station data, show absolute altitude
+          // No station data or station has no fix, show absolute altitude
           document.getElementById('dogAltitude').textContent = data.altitude.toFixed(1) + ' m (absolute)';
         } else {
           document.getElementById('dogAltitude').textContent = '--';
@@ -378,6 +419,10 @@ function updateBeaconData() {
 
 function updateMapView() {
   var markers = [];
+  // Add all beacon markers
+  for (var id in beaconMarkers) {
+    markers.push(beaconMarkers[id]);
+  }
   if (beaconMarker) markers.push(beaconMarker);
   if (stationMarker) markers.push(stationMarker);
   if (browserMarker) markers.push(browserMarker);

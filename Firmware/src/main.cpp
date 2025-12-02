@@ -10,6 +10,7 @@
 #include <Preferences.h>
 #include <LittleFS.h>
 #include <ESPmDNS.h>
+#include <map>
 
 // -----------------------------------------------------------------------------
 // Device role selection
@@ -90,6 +91,7 @@ const uint32_t BEACON_AWAKE_WINDOW_MS = 1500;    // How long to stay awake
 // Simple message types
 struct __attribute__((packed)) BeaconMessage {
   uint8_t msgType;   // 0x01 = GPS beacon, 0x02 = control ack, etc.
+  char beaconId[9];  // Unique beacon identifier (ESP32 chip ID in hex, null-terminated)
   float latitude;
   float longitude;
   float hdop;
@@ -105,6 +107,7 @@ struct __attribute__((packed)) BeaconMessage {
 
 struct __attribute__((packed)) ControlMessage {
   uint8_t msgType;   // 0x10 = control from station
+  char beaconId[9];  // Target beacon ID (hex, null-terminated)
   uint8_t ledOn;     // 0 or 1
   uint8_t buzzerOn;  // 0 or 1
 };
@@ -120,6 +123,7 @@ bool serverStarted = false;
 
 // Latest beacon data (global for web server)
 struct LatestBeaconData {
+  String beaconId = "";
   float latitude = 0.0;
   float longitude = 0.0;
   float hdop = 0.0;
@@ -135,7 +139,11 @@ struct LatestBeaconData {
   float rssi = 0.0;
   float snr = 0.0;
   bool hasData = false;
-} latestBeacon;
+};
+
+// Support for multiple beacons
+std::map<String, LatestBeaconData> beacons;
+LatestBeaconData latestBeacon; // Keep for backward compatibility
 
 // Station GPS location (global for web server)
 struct StationLocation {
@@ -150,10 +158,118 @@ struct StationLocation {
 
 // Control state for beacon actuators
 struct BeaconControlState {
+  String targetBeaconId = ""; // Which beacon to control (empty = first/any)
   bool ledOn = false;
   bool buzzerOn = false;
   bool pendingControl = false; // Flag to send control on next beacon reception
 } beaconControl;
+
+// Beacon name configuration
+const char* BEACON_CONFIG_FILE = "/config/beacons.json";
+std::map<String, String> beaconNames;
+uint32_t beaconDisconnectTimeout = 60000; // Default: 60 seconds in milliseconds
+
+// Get beacon name (returns default if not configured)
+String getBeaconName(const String& beaconId) {
+  auto it = beaconNames.find(beaconId);
+  if (it != beaconNames.end()) {
+    return it->second;
+  }
+  // Generate default name from beacon ID
+  return "Beacon-" + beaconId;
+}
+
+// Load beacon names from file
+void loadBeaconConfig() {
+  beaconNames.clear();
+  beaconDisconnectTimeout = 60000; // Reset to default
+  
+  File file = LittleFS.open(BEACON_CONFIG_FILE, "r");
+  if (!file) {
+    Serial.println("No beacon config file found, will use defaults");
+    return;
+  }
+  
+  String content = file.readString();
+  file.close();
+  
+  // Parse disconnect timeout
+  int timeoutPos = content.indexOf("\"disconnectTimeout\"");
+  if (timeoutPos >= 0) {
+    int colonPos = content.indexOf(":", timeoutPos);
+    if (colonPos >= 0) {
+      int endPos = content.indexOf(",", colonPos);
+      if (endPos < 0) endPos = content.indexOf("}", colonPos);
+      if (endPos > colonPos) {
+        String timeoutStr = content.substring(colonPos + 1, endPos);
+        timeoutStr.trim();
+        uint32_t timeout = timeoutStr.toInt();
+        if (timeout >= 10 && timeout <= 600) { // 10 seconds to 10 minutes
+          beaconDisconnectTimeout = timeout * 1000;
+          Serial.printf("Loaded disconnect timeout: %d seconds\n", timeout);
+        }
+      }
+    }
+  }
+  
+  // Parse simple JSON: {"beacons":[{"id":123,"name":"Dog1"}...]}
+  int pos = content.indexOf('[');
+  if (pos < 0) return;
+  
+  while (true) {
+    pos = content.indexOf("{\"id\"", pos);
+    if (pos < 0) break;
+    
+    int idStart = content.indexOf(":\"", pos);
+    if (idStart < 0) break;
+    idStart += 2; // Skip past :"
+    
+    int idEnd = content.indexOf("\"", idStart);
+    if (idEnd < 0) break;
+    
+    String id = content.substring(idStart, idEnd);
+    
+    int nameStart = content.indexOf("\"name\":\"", idEnd);
+    if (nameStart < 0) break;
+    nameStart += 8; // Skip past "name":"
+    
+    int nameEnd = content.indexOf("\"", nameStart);
+    if (nameEnd < 0) break;
+    
+    String name = content.substring(nameStart, nameEnd);
+    beaconNames[id] = name;
+    
+    Serial.printf("Loaded beacon config: ID=%s, Name=%s\n", id.c_str(), name.c_str());
+    pos = nameEnd;
+  }
+}
+
+// Save beacon names to file
+void saveBeaconConfig() {
+  // Create directory if needed
+  if (!LittleFS.exists("/config")) {
+    LittleFS.mkdir("/config");
+  }
+  
+  File file = LittleFS.open(BEACON_CONFIG_FILE, "w");
+  if (!file) {
+    Serial.println("Failed to open beacon config for writing");
+    return;
+  }
+  
+  file.printf("{\"disconnectTimeout\":%d,", beaconDisconnectTimeout / 1000); // Save as seconds
+  file.print("\"beacons\":[");
+  bool first = true;
+  for (const auto& pair : beaconNames) {
+    if (!first) file.print(",");
+    file.printf("{\"id\":\"%s\",\"name\":\"%s\"}", pair.first.c_str(), pair.second.c_str());
+    first = false;
+  }
+  file.println("]}");
+  file.close();
+  
+  Serial.println("Beacon config saved");
+}
 
 // -----------------------------------------------------------------------------
 // Statistics Tracking
@@ -384,7 +500,7 @@ void logBeaconHistory(const BeaconMessage &msg, float rssi, float snr) {
   if (!LittleFS.exists(HISTORY_FILE)) {
     file = LittleFS.open(HISTORY_FILE, FILE_WRITE);
     if (file) {
-      file.println("timestamp,latitude,longitude,speed,altitude,battery,rssi,snr");
+      file.println("timestamp,beaconId,latitude,longitude,speed,altitude,battery,rssi,snr");
       file.close();
       Serial.println("History file created");
     }
@@ -400,9 +516,20 @@ void logBeaconHistory(const BeaconMessage &msg, float rssi, float snr) {
   // Write data (compact format with full precision for GPS coordinates)
   file.print(timestamp);
   file.print(",");
-  file.print(msg.latitude, 6);   // 6 decimal places for GPS (~11cm precision)
+  file.print(msg.beaconId);
   file.print(",");
-  file.print(msg.longitude, 6);
+  // Use single 0 for zero coordinates to save space
+  if (msg.latitude == 0.0) {
+    file.print("0");
+  } else {
+    file.print(msg.latitude, 6);   // 6 decimal places for GPS (~11cm precision)
+  }
+  file.print(",");
+  if (msg.longitude == 0.0) {
+    file.print("0");
+  } else {
+    file.print(msg.longitude, 6);
+  }
   file.print(",");
   file.print(msg.speed, 1);
   file.print(",");
@@ -416,7 +543,7 @@ void logBeaconHistory(const BeaconMessage &msg, float rssi, float snr) {
   
   file.close();
   
-  Serial.println("Beacon position logged to history");
+  // Serial.println("Beacon position logged to history");
 }
 
 // -----------------------------------------------------------------------------
@@ -818,6 +945,7 @@ void loopPupBeacon() {
 
   BeaconMessage msg{};
   msg.msgType = 0x01;
+  snprintf(msg.beaconId, sizeof(msg.beaconId), "%08X", (uint32_t)ESP.getEfuseMac()); // Use ESP32 chip ID as unique beacon ID
   msg.latitude = gotFix ? lat : 0.0;
   msg.longitude = gotFix ? lng : 0.0;
   msg.hdop = gotFix ? hdop : 0.0f;
@@ -853,6 +981,8 @@ void loopPupBeacon() {
   Serial.println(")...");
   
   uint32_t listenStart = millis();
+  char myBeaconId[9];
+  snprintf(myBeaconId, sizeof(myBeaconId), "%08X", (uint32_t)ESP.getEfuseMac());
   while (millis() - listenStart < 500) {
     ControlMessage ctrl{};
     int state = radio.readData((uint8_t *)&ctrl, sizeof(ctrl));
@@ -860,7 +990,8 @@ void loopPupBeacon() {
     if (state == RADIOLIB_ERR_NONE) {
       Serial.print("Control received! msgType: 0x");
       Serial.println(ctrl.msgType, HEX);
-      if (ctrl.msgType == 0x10) {
+      // Check if message is for us (beaconId empty means broadcast to all)
+      if (ctrl.msgType == 0x10 && (strlen(ctrl.beaconId) == 0 || strcmp(ctrl.beaconId, myBeaconId) == 0)) {
         setActuators(ctrl.ledOn != 0, ctrl.buzzerOn != 0);
         lastRxTime = millis();
         
@@ -953,8 +1084,12 @@ void setupWiFiAndWebServer() {
   
   // API endpoint to get JSON data (define before static file handler)
   server.on("/api/data", HTTP_GET, [](AsyncWebServerRequest *request){
+    // Support for legacy single-beacon mode (latestBeacon) and multi-beacon mode
     String json = "{";
+    
+    // Include primary beacon data (backward compatibility)
     json += "\"hasData\":" + String(latestBeacon.hasData ? "true" : "false") + ",";
+    json += "\"beaconId\":\"" + String(latestBeacon.beaconId) + "\",";
     json += "\"latitude\":" + String(latestBeacon.latitude, 6) + ",";
     json += "\"longitude\":" + String(latestBeacon.longitude, 6) + ",";
     json += "\"hdop\":" + String(latestBeacon.hdop, 2) + ",";
@@ -968,6 +1103,33 @@ void setupWiFiAndWebServer() {
     json += "\"speed\":" + String(latestBeacon.speed, 2) + ",";
     json += "\"altitude\":" + String(latestBeacon.altitude, 1) + ",";
     json += "\"lastUpdate\":" + String(latestBeacon.lastUpdate) + ",";
+    
+    // Add all beacons data
+    json += "\"beacons\":[";
+    bool first = true;
+    for (const auto& pair : beacons) {
+      if (!first) json += ",";
+      const LatestBeaconData& b = pair.second;
+      json += "{";
+      json += "\"id\":\"" + String(b.beaconId) + "\",";
+      json += "\"name\":\"" + getBeaconName(b.beaconId) + "\",";
+      json += "\"latitude\":" + String(b.latitude, 6) + ",";
+      json += "\"longitude\":" + String(b.longitude, 6) + ",";
+      json += "\"hdop\":" + String(b.hdop, 2) + ",";
+      json += "\"sats\":" + String(b.sats) + ",";
+      json += "\"battery\":" + String(b.batteryVoltage, 2) + ",";
+      json += "\"rssi\":" + String(b.rssi, 1) + ",";
+      json += "\"snr\":" + String(b.snr, 1) + ",";
+      json += "\"speed\":" + String(b.speed, 2) + ",";
+      json += "\"altitude\":" + String(b.altitude, 1) + ",";
+      json += "\"lastUpdate\":" + String(b.lastUpdate) + ",";
+      json += "\"hasData\":" + String(b.hasData ? "true" : "false");
+      json += "}";
+      first = false;
+    }
+    json += "],";
+    
+    // Station data
     json += "\"station\":{";
     json += "\"hasValidFix\":" + String(stationLocation.hasValidFix ? "true" : "false") + ",";
     json += "\"latitude\":" + String(stationLocation.latitude, 6) + ",";
@@ -976,7 +1138,8 @@ void setupWiFiAndWebServer() {
     json += "\"sats\":" + String(stationLocation.sats) + ",";
     json += "\"altitude\":" + String(stationLocation.altitude, 1) + ",";
     json += "\"lastUpdate\":" + String(stationLocation.lastUpdate);
-    json += "}";
+    json += "},";
+    json += "\"serverTime\":" + String(millis());
     json += "}";
     request->send(200, "application/json", json);
   });
@@ -1102,12 +1265,26 @@ void setupWiFiAndWebServer() {
       beaconAvgBat /= dataPoints;
     }
     
-    // Get stats file size
+    // Get file sizes
     size_t statsFileSize = 0;
     File statsFile = LittleFS.open(STATS_FILE, FILE_READ);
     if (statsFile) {
       statsFileSize = statsFile.size();
       statsFile.close();
+    }
+    
+    size_t historyFileSize = 0;
+    File historyFile = LittleFS.open(HISTORY_FILE, FILE_READ);
+    if (historyFile) {
+      historyFileSize = historyFile.size();
+      historyFile.close();
+    }
+    
+    size_t configFileSize = 0;
+    File configFile = LittleFS.open(BEACON_CONFIG_FILE, FILE_READ);
+    if (configFile) {
+      configFileSize = configFile.size();
+      configFile.close();
     }
     
     // Build JSON response
@@ -1119,7 +1296,9 @@ void setupWiFiAndWebServer() {
     json += "\"totalPsram\":" + String(ESP.getPsramSize()) + ",";
     json += "\"sketchSize\":" + String(ESP.getSketchSize()) + ",";
     json += "\"freeSketch\":" + String(ESP.getFreeSketchSpace()) + ",";
-    json += "\"statsFileSize\":" + String(statsFileSize);
+    json += "\"statsFileSize\":" + String(statsFileSize) + ",";
+    json += "\"historyFileSize\":" + String(historyFileSize) + ",";
+    json += "\"configFileSize\":" + String(configFileSize);
     json += "},";
     json += "\"station\":{";
     json += "\"uptime\":" + String(uptime) + ",";
@@ -1147,37 +1326,43 @@ void setupWiFiAndWebServer() {
     json += "},";
     json += "\"history\":[";
     
-    // Read history data (last 100 entries)
-    file = LittleFS.open(STATS_FILE, FILE_READ);
-    if (file) {
-      file.readStringUntil('\n'); // Skip header
+    // Read history data from HISTORY_FILE (last 100 entries) for battery chart
+    // Format: timestamp,beaconId,latitude,longitude,speed,altitude,battery,rssi,snr
+    File histFile = LittleFS.open(HISTORY_FILE, FILE_READ);
+    if (histFile) {
+      histFile.readStringUntil('\n'); // Skip header
       String entries[100];
       int entryCount = 0;
       
-      while (file.available() && entryCount < 100) {
-        String line = file.readStringUntil('\n');
+      // Read all entries first
+      while (histFile.available() && entryCount < 100) {
+        String line = histFile.readStringUntil('\n');
         if (line.length() > 0) {
-          // Parse: timestamp,stationUptime,stationBattery,beaconUptime,beaconBattery
-          int idx1 = line.indexOf(',');
-          int idx2 = line.indexOf(',', idx1 + 1);
-          int idx3 = line.indexOf(',', idx2 + 1);
-          int idx4 = line.indexOf(',', idx3 + 1);
+          // Parse: timestamp,beaconId,latitude,longitude,speed,altitude,battery,rssi,snr
+          int idx[8];
+          idx[0] = line.indexOf(',');
+          for (int i = 1; i < 8; i++) {
+            idx[i] = line.indexOf(',', idx[i-1] + 1);
+          }
           
-          if (idx1 > 0 && idx2 > 0 && idx3 > 0 && idx4 > 0) {
+          if (idx[0] > 0 && idx[6] > 0) {
+            String timestamp = line.substring(0, idx[0]);
+            String beaconId = line.substring(idx[0] + 1, idx[1]);
+            String battery = line.substring(idx[5] + 1, idx[6]);
+            
             String entry = "{";
-            entry += "\"timestamp\":" + line.substring(0, idx1) + ",";
-            entry += "\"stationUptime\":" + line.substring(idx1 + 1, idx2) + ",";
-            entry += "\"stationBattery\":" + line.substring(idx2 + 1, idx3) + ",";
-            entry += "\"beaconUptime\":" + line.substring(idx3 + 1, idx4) + ",";
-            entry += "\"beaconBattery\":" + line.substring(idx4 + 1);
+            entry += "\"timestamp\":" + timestamp + ",";
+            entry += "\"beaconId\":\"" + beaconId + "\",";
+            entry += "\"beaconBattery\":" + battery + ",";
+            entry += "\"stationBattery\":" + String(stationBattery, 2); // Current station battery
             entry += "}";
             entries[entryCount++] = entry;
           }
         }
       }
-      file.close();
+      histFile.close();
       
-      // Add entries to JSON (most recent first)
+      // Add last 100 entries to JSON
       for (int i = max(0, entryCount - 100); i < entryCount; i++) {
         if (i > max(0, entryCount - 100)) json += ",";
         json += entries[i];
@@ -1188,6 +1373,107 @@ void setupWiFiAndWebServer() {
     json += "}";
     
     request->send(200, "application/json", json);
+  });
+  
+  // Beacon Configuration API endpoints
+  
+  // Get list of all known beacons
+  server.on("/api/beacons/list", HTTP_GET, [](AsyncWebServerRequest *request){
+    String json = "{\"beacons\":[";
+    bool first = true;
+    for (const auto& pair : beacons) {
+      if (!first) json += ",";
+      json += "{";
+      json += "\"id\":\"" + String(pair.first) + "\",";
+      json += "\"name\":\"" + getBeaconName(pair.first) + "\",";
+      json += "\"lastSeen\":" + String(pair.second.lastUpdate) + ",";
+      json += "\"hasData\":" + String(pair.second.hasData ? "true" : "false");
+      json += "}";
+      first = false;
+    }
+    json += "],";
+    json += "\"disconnectTimeout\":" + String(beaconDisconnectTimeout / 1000) + ","; // Send as seconds
+    json += "\"serverTime\":" + String(millis());
+    json += "}";
+    request->send(200, "application/json", json);
+  });
+  
+  // Update beacon name
+  server.on("/api/beacons/update", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL,
+    [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total){
+      // Parse JSON body: {"id":123,"name":"My Dog"}
+      String body = String((char*)data).substring(0, len);
+      
+      int idPos = body.indexOf("\"id\":\"");
+      int namePos = body.indexOf("\"name\":\"");
+      
+      if (idPos < 0 || namePos < 0) {
+        request->send(400, "text/plain", "Invalid JSON");
+        return;
+      }
+      
+      int idStart = idPos + 6; // Skip past "id":"
+      int idEnd = body.indexOf("\"", idStart);
+      String beaconId = body.substring(idStart, idEnd);
+      
+      int nameStart = namePos + 8;
+      int nameEnd = body.indexOf("\"", nameStart);
+      String beaconName = body.substring(nameStart, nameEnd);
+      
+      // Update beacon name
+      beaconNames[beaconId] = beaconName;
+      saveBeaconConfig();
+      
+      Serial.printf("Beacon name updated: %s -> %s\n", beaconId.c_str(), beaconName.c_str());
+      request->send(200, "text/plain", "OK");
+    });
+  
+  // Update system settings
+  server.on("/api/settings/update", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL,
+    [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total){
+      // Parse JSON body: {"disconnectTimeout":90}
+      String body = String((char*)data).substring(0, len);
+      
+      int timeoutPos = body.indexOf("\"disconnectTimeout\"");
+      if (timeoutPos >= 0) {
+        int colonPos = body.indexOf(":", timeoutPos);
+        if (colonPos >= 0) {
+          int endPos = body.indexOf(",", colonPos);
+          if (endPos < 0) endPos = body.indexOf("}", colonPos);
+          if (endPos > colonPos) {
+            String timeoutStr = body.substring(colonPos + 1, endPos);
+            timeoutStr.trim();
+            uint32_t timeout = timeoutStr.toInt();
+            if (timeout >= 10 && timeout <= 600) { // 10 seconds to 10 minutes
+              beaconDisconnectTimeout = timeout * 1000;
+              saveBeaconConfig();
+              Serial.printf("Disconnect timeout updated: %d seconds\n", timeout);
+              request->send(200, "text/plain", "OK");
+              return;
+            }
+          }
+        }
+      }
+      
+      request->send(400, "text/plain", "Invalid timeout value (must be 10-600 seconds)");
+    });
+  
+  // Get beacon configuration file
+  server.on("/api/beacons/config", HTTP_GET, [](AsyncWebServerRequest *request){
+    if (!LittleFS.exists(BEACON_CONFIG_FILE)) {
+      request->send(200, "application/json", "{\"beacons\":[]}");
+      return;
+    }
+    
+    File file = LittleFS.open(BEACON_CONFIG_FILE, FILE_READ);
+    if (!file) {
+      request->send(500, "text/plain", "Failed to open config file");
+      return;
+    }
+    
+    String content = file.readString();
+    file.close();
+    request->send(200, "application/json", content);
   });
   
   // History API endpoints - IMPORTANT: More specific routes first!
@@ -1338,6 +1624,9 @@ void setupPupStation() {
   // Setup WiFi and web server
   setupWiFiAndWebServer();
   
+  // Load beacon configuration
+  loadBeaconConfig();
+  
   // Initialize statistics tracking
   initStats();
 
@@ -1349,6 +1638,7 @@ void setupPupStation() {
 
 void handleIncomingBeacon(const BeaconMessage &msg, float rssi, float snr) {
   Serial.println("\n=== BEACON RECEIVED ===");
+  Serial.printf("Beacon ID: %s\n", msg.beaconId);
   
   // Validate data ranges
   bool validData = true;
@@ -1367,22 +1657,37 @@ void handleIncomingBeacon(const BeaconMessage &msg, float rssi, float snr) {
     return;
   }
   
-  // Store in global structure for web server
-  latestBeacon.latitude = msg.latitude;
-  latestBeacon.longitude = msg.longitude;
-  latestBeacon.hdop = msg.hdop;
-  latestBeacon.sats = msg.sats;
-  latestBeacon.batteryVoltage = msg.batteryVoltage;
-  latestBeacon.ledOn = msg.ledOn;
-  latestBeacon.buzzerOn = msg.buzzerOn;
-  latestBeacon.lastControlReceived = msg.lastControlReceived;
-  latestBeacon.speed = msg.speed;
-  latestBeacon.altitude = msg.altitude;
-  latestBeacon.uptime = msg.uptime;
-  latestBeacon.lastUpdate = millis();
-  latestBeacon.rssi = rssi;
-  latestBeacon.snr = snr;
-  latestBeacon.hasData = true;
+  // Store in beacons map
+  String beaconIdStr = String(msg.beaconId);
+  LatestBeaconData& beacon = beacons[beaconIdStr];
+  beacon.beaconId = beaconIdStr;
+  beacon.latitude = msg.latitude;
+  beacon.longitude = msg.longitude;
+  beacon.hdop = msg.hdop;
+  beacon.sats = msg.sats;
+  beacon.batteryVoltage = msg.batteryVoltage;
+  beacon.ledOn = msg.ledOn;
+  beacon.buzzerOn = msg.buzzerOn;
+  beacon.lastControlReceived = msg.lastControlReceived;
+  beacon.speed = msg.speed;
+  beacon.altitude = msg.altitude;
+  beacon.uptime = msg.uptime;
+  beacon.lastUpdate = millis();
+  beacon.rssi = rssi;
+  beacon.snr = snr;
+  beacon.hasData = true;
+  
+  // If this is a new beacon (not in beaconNames yet), add default name and save
+  if (beaconNames.find(beaconIdStr) == beaconNames.end()) {
+    beaconNames[beaconIdStr] = "Beacon-" + beaconIdStr;
+    saveBeaconConfig();
+    Serial.printf("New beacon detected, saved default name: %s\n", beaconIdStr.c_str());
+  }
+  
+  // Also update latestBeacon for backward compatibility (use first or most recent)
+  if (beacons.size() == 1 || beaconIdStr == latestBeacon.beaconId || latestBeacon.beaconId.isEmpty()) {
+    latestBeacon = beacon;
+  }
   
   // System Info
   Serial.print("Uptime:       ");
@@ -1403,16 +1708,16 @@ void handleIncomingBeacon(const BeaconMessage &msg, float rssi, float snr) {
   Serial.print("m ");
   Serial.print(seconds);
   Serial.println("s");
-  Serial.println();
+  // Serial.println();
   
   // GPS Data
-  Serial.print("Latitude:     ");
-  Serial.print(msg.latitude, 6);
-  Serial.println("°");
-  Serial.print("Longitude:    ");
-  Serial.print(msg.longitude, 6);
-  Serial.println("°");
-  Serial.print("Altitude:     ");
+  Serial.print("Lat:     ");
+  Serial.println(msg.latitude, 6);
+  // Serial.println("°");
+  Serial.print("Lon:    ");
+  Serial.println(msg.longitude, 6);
+  // Serial.println("°");
+  Serial.print("Alt:     ");
   Serial.print(msg.altitude, 1);
   Serial.println(" m");
   Serial.print("Speed:        ");
@@ -1454,9 +1759,11 @@ void handleIncomingBeacon(const BeaconMessage &msg, float rssi, float snr) {
   logBeaconHistory(msg, rssi, snr);
 }
 
-void sendControl(bool ledOn, bool buzzerOn) {
+void sendControl(bool ledOn, bool buzzerOn, const String& targetBeaconId = "") {
   ControlMessage ctrl{};
   ctrl.msgType = 0x10;
+  strncpy(ctrl.beaconId, targetBeaconId.c_str(), sizeof(ctrl.beaconId) - 1); // empty = broadcast to all beacons
+  ctrl.beaconId[sizeof(ctrl.beaconId) - 1] = '\0';
   ctrl.ledOn = ledOn ? 1 : 0;
   ctrl.buzzerOn = buzzerOn ? 1 : 0;
 
@@ -1714,17 +2021,13 @@ void loopPupStation() {
     if (state == RADIOLIB_ERR_NONE) {
       // Packet received successfully - validate it
       if (msg.msgType == 0x01) {
-        Serial.print("Packet received! msgType: 0x");
-        Serial.print(msg.msgType, HEX);
+        // Serial.print("Packet received! msgType: 0x");
+        // Serial.print(msg.msgType, HEX);
         
         // Get RSSI and SNR
         float rssi = radio.getRSSI();
         float snr = radio.getSNR();
-        Serial.print(", RSSI: ");
-        Serial.print(rssi);
-        Serial.print(" dBm, SNR: ");
-        Serial.print(snr);
-        Serial.println(" dB");
+        // Serial.print(", RSSI:  
         
         handleIncomingBeacon(msg, rssi, snr);
         
@@ -1732,7 +2035,7 @@ void loopPupStation() {
         if (beaconControl.pendingControl) {
           Serial.println("Sending pending control command...");
           delay(50); // Small delay to let beacon enter receive mode
-          sendControl(beaconControl.ledOn, beaconControl.buzzerOn);
+          sendControl(beaconControl.ledOn, beaconControl.buzzerOn, beaconControl.targetBeaconId);
           beaconControl.pendingControl = false;
         }
       }
@@ -1763,7 +2066,7 @@ void loopPupStation() {
   static uint32_t lastStatus = 0;
   if (now - lastStatus > 10000) {
     lastStatus = now;
-    Serial.println("PupStation listening...");
+    // Serial.println("PupStation listening...");
   }
 }
 
