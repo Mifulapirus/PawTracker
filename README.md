@@ -19,7 +19,34 @@
 
 ## Getting Started
 
-Documentation and setup instructions will be added as development progresses.
+See individual component READMEs for detailed setup instructions:
+- `Firmware/` - PupBeacon and PupStation firmware
+- `Server/` - Central tracking server with web dashboard
+
+## Server
+
+The `Server/` directory contains a Node.js-based central tracking server with a login-protected web dashboard. PupStations can optionally send their beacon data to this server when they have internet connectivity.
+
+**Features:**
+- Real-time GPS tracking dashboard with interactive maps
+- WebSocket support for live updates
+- Remote LED/buzzer control through the web interface
+- Multi-device support
+- Authentication and session management
+- Device history tracking
+
+**Quick Start:**
+```bash
+cd Server
+npm install
+cp .env.example .env
+# Edit .env with your credentials
+npm start
+```
+
+Then configure each PupStation with your server URL via its web interface or API.
+
+See `Server/README.md` for complete documentation.
 
 ## Firmware
 

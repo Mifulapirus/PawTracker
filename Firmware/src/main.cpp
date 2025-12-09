@@ -10,6 +10,8 @@
 #include <Preferences.h>
 #include <LittleFS.h>
 #include <ESPmDNS.h>
+#include <HTTPClient.h>
+#include <ArduinoJson.h>
 #include <map>
 
 // -----------------------------------------------------------------------------
@@ -120,6 +122,13 @@ AsyncWebServer server(80);
 WiFiManager wifiManager;
 Preferences preferences;
 bool serverStarted = false;
+
+// Central server configuration (PupStation only)
+String centralServerUrl = "";  // e.g., "http://yourserver.com:3000"
+String deviceId = "";  // Unique device ID for this PupStation
+bool centralServerEnabled = false;
+uint32_t lastServerSync = 0;
+const uint32_t SERVER_SYNC_INTERVAL = 5000; // Send data every 5 seconds
 
 // Latest beacon data (global for web server)
 struct LatestBeaconData {
@@ -1020,6 +1029,194 @@ void loopPupBeacon() {
 }
 
 // -----------------------------------------------------------------------------
+// Central Server Communication (PupStation only)
+// -----------------------------------------------------------------------------
+
+void sendBeaconDataToServer() {
+  if (!centralServerEnabled || centralServerUrl.isEmpty()) {
+    return;
+  }
+
+  if (!WiFi.isConnected()) {
+    Serial.println("WiFi not connected, skipping server sync");
+    return;
+  }
+
+  if (!latestBeacon.hasData) {
+    Serial.println("No beacon data to send");
+    return;
+  }
+
+  HTTPClient http;
+  String url = centralServerUrl + "/api/device/beacon";
+  
+  http.begin(url);
+  http.addHeader("Content-Type", "application/json");
+
+  // Create JSON payload
+  JsonDocument doc;
+  doc["deviceId"] = deviceId;
+  
+  JsonObject beaconData = doc["beaconData"].to<JsonObject>();
+  beaconData["trackerId"] = latestBeacon.beaconId;
+  beaconData["latitude"] = latestBeacon.latitude;
+  beaconData["longitude"] = latestBeacon.longitude;
+  beaconData["hdop"] = latestBeacon.hdop;
+  beaconData["sats"] = latestBeacon.sats;
+  beaconData["batteryVoltage"] = latestBeacon.batteryVoltage;
+  beaconData["rssi"] = latestBeacon.rssi;
+  beaconData["snr"] = latestBeacon.snr;
+  beaconData["ledOn"] = latestBeacon.ledOn;
+  beaconData["buzzerOn"] = latestBeacon.buzzerOn;
+  beaconData["speed"] = latestBeacon.speed;
+  beaconData["altitude"] = latestBeacon.altitude;
+  
+  // Add station location if available
+  if (stationLocation.hasValidFix) {
+    JsonObject stationLoc = doc["stationLocation"].to<JsonObject>();
+    stationLoc["latitude"] = stationLocation.latitude;
+    stationLoc["longitude"] = stationLocation.longitude;
+    stationLoc["hdop"] = stationLocation.hdop;
+    stationLoc["sats"] = stationLocation.sats;
+    stationLoc["altitude"] = stationLocation.altitude;
+    stationLoc["hasValidFix"] = stationLocation.hasValidFix;
+  }
+
+  String jsonString;
+  serializeJson(doc, jsonString);
+
+  int httpCode = http.POST(jsonString);
+
+  if (httpCode > 0) {
+    if (httpCode == HTTP_CODE_OK) {
+      Serial.println("Beacon data sent to server successfully");
+    } else {
+      Serial.printf("Server responded with code: %d\n", httpCode);
+    }
+  } else {
+    Serial.printf("Failed to send data to server: %s\n", http.errorToString(httpCode).c_str());
+  }
+
+  http.end();
+}
+
+void checkServerForControlCommands() {
+  if (!centralServerEnabled || centralServerUrl.isEmpty() || deviceId.isEmpty()) {
+    return;
+  }
+
+  if (!WiFi.isConnected()) {
+    return;
+  }
+
+  HTTPClient http;
+  String url = centralServerUrl + "/api/device/" + deviceId + "/control";
+  
+  http.begin(url);
+  int httpCode = http.GET();
+
+  if (httpCode == HTTP_CODE_OK) {
+    String payload = http.getString();
+    
+    JsonDocument doc;
+    DeserializationError error = deserializeJson(doc, payload);
+    
+    if (!error) {
+      bool hasCommand = doc["hasCommand"] | false;
+      
+      if (hasCommand) {
+        bool ledOn = doc["ledOn"] | false;
+        bool buzzerOn = doc["buzzerOn"] | false;
+        
+        Serial.printf("Server control command received: LED=%d, Buzzer=%d\n", ledOn, buzzerOn);
+        
+        // Update beacon control state
+        beaconControl.ledOn = ledOn;
+        beaconControl.buzzerOn = buzzerOn;
+        beaconControl.pendingControl = true;
+        beaconControl.targetBeaconId = latestBeacon.beaconId;
+      }
+    }
+  }
+
+  http.end();
+}
+
+void registerDeviceWithServer() {
+  if (!centralServerEnabled || centralServerUrl.isEmpty() || deviceId.isEmpty()) {
+    return;
+  }
+
+  if (!WiFi.isConnected()) {
+    Serial.println("WiFi not connected, cannot register with server");
+    return;
+  }
+
+  HTTPClient http;
+  String url = centralServerUrl + "/api/device/register";
+  
+  http.begin(url);
+  http.addHeader("Content-Type", "application/json");
+
+  JsonDocument doc;
+  doc["deviceId"] = deviceId;
+  doc["deviceName"] = "PupStation " + deviceId.substring(0, 8);
+
+  String jsonString;
+  serializeJson(doc, jsonString);
+
+  int httpCode = http.POST(jsonString);
+
+  if (httpCode > 0) {
+    if (httpCode == HTTP_CODE_OK) {
+      Serial.println("Device registered with central server successfully");
+    } else {
+      Serial.printf("Server registration responded with code: %d\n", httpCode);
+    }
+  } else {
+    Serial.printf("Failed to register with server: %s\n", http.errorToString(httpCode).c_str());
+  }
+
+  http.end();
+}
+
+void loadServerConfig() {
+  preferences.begin("pawtracker", false);
+  centralServerUrl = preferences.getString("serverUrl", "");
+  deviceId = preferences.getString("deviceId", "");
+  
+  if (deviceId.isEmpty()) {
+    // Generate unique device ID from MAC address
+    uint8_t mac[6];
+    WiFi.macAddress(mac);
+    deviceId = String(mac[0], HEX) + String(mac[1], HEX) + 
+               String(mac[2], HEX) + String(mac[3], HEX) + 
+               String(mac[4], HEX) + String(mac[5], HEX);
+    deviceId.toUpperCase();
+    preferences.putString("deviceId", deviceId);
+  }
+  
+  centralServerEnabled = !centralServerUrl.isEmpty();
+  preferences.end();
+  
+  Serial.println("Server configuration loaded:");
+  Serial.println("  Device ID: " + deviceId);
+  Serial.println("  Server URL: " + (centralServerUrl.isEmpty() ? "[Not configured]" : centralServerUrl));
+  Serial.println("  Server sync: " + String(centralServerEnabled ? "Enabled" : "Disabled"));
+}
+
+void saveServerConfig(String url) {
+  preferences.begin("pawtracker", false);
+  preferences.putString("serverUrl", url);
+  preferences.end();
+  
+  centralServerUrl = url;
+  centralServerEnabled = !url.isEmpty();
+  
+  Serial.println("Server URL saved: " + url);
+}
+
+// -----------------------------------------------------------------------------
 // PupStation behavior (human-carried unit)
 // -----------------------------------------------------------------------------
 
@@ -1582,6 +1779,32 @@ void setupWiFiAndWebServer() {
     request->send(response);
   });
   
+  // Central server configuration API
+  server.on("/api/server/config", HTTP_GET, [](AsyncWebServerRequest *request){
+    String json = "{";
+    json += "\"serverUrl\":\"" + centralServerUrl + "\",";
+    json += "\"deviceId\":\"" + deviceId + "\",";
+    json += "\"enabled\":" + String(centralServerEnabled ? "true" : "false");
+    json += "}";
+    request->send(200, "application/json", json);
+  });
+  
+  server.on("/api/server/config", HTTP_POST, [](AsyncWebServerRequest *request){
+    if (request->hasParam("serverUrl", true)) {
+      String url = request->getParam("serverUrl", true)->value();
+      saveServerConfig(url);
+      
+      // Try to register with the new server
+      if (centralServerEnabled) {
+        registerDeviceWithServer();
+      }
+      
+      request->send(200, "text/plain", "Server configuration saved");
+    } else {
+      request->send(400, "text/plain", "Missing serverUrl parameter");
+    }
+  });
+  
   // Handle favicon to prevent 404 errors
   server.on("/favicon.ico", HTTP_GET, [](AsyncWebServerRequest *request){
     // Return empty 204 No Content to prevent errors
@@ -1623,6 +1846,12 @@ void setupPupStation() {
 
   // Setup WiFi and web server
   setupWiFiAndWebServer();
+  
+  // Load server configuration and register device
+  loadServerConfig();
+  if (centralServerEnabled) {
+    registerDeviceWithServer();
+  }
   
   // Load beacon configuration
   loadBeaconConfig();
@@ -2049,6 +2278,13 @@ void loopPupStation() {
   if (now - lastStatsLog >= STATS_LOG_INTERVAL) {
     lastStatsLog = now;
     logStats();
+  }
+  
+  // Send beacon data to central server periodically
+  if (centralServerEnabled && (now - lastServerSync >= SERVER_SYNC_INTERVAL)) {
+    lastServerSync = now;
+    sendBeaconDataToServer();
+    checkServerForControlCommands();
   }
   
   // Small delay but don't block too long for web server

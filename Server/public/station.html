@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset='UTF-8'>
+  <meta name='viewport' content='width=device-width, initial-scale=1'>
+  <title>Station View - PawTracker</title>
+  <link rel='stylesheet' href='/css/station.css'>
+</head>
+<body>
+  <div class='container'>
+    <div class='header'>
+      <h1>🐾 <span id='stationName'>Loading...</span></h1>
+      <button class='btn-back' onclick='window.location.href="/"'>← Back to Dashboard</button>
+    </div>
+    
+    <div class='nav-links'>
+      <a href='#' class='nav-link active' onclick='showView("dashboard"); return false;'>Dashboard</a>
+      <a href='#' class='nav-link' onclick='showView("map"); return false;'>Map View</a>
+      <a href='#' class='nav-link' onclick='showView("history"); return false;'>History</a>
+      <a href='#' class='nav-link' onclick='showView("stats"); return false;'>Statistics</a>
+      <a href='#' class='nav-link' onclick='showView("config"); return false;'>Configuration</a>
+    </div>
+    
+    <div id='noData' class='card' style='display:none;'>
+      <h2>Waiting for beacon...</h2>
+      <p>No data received yet from PupBeacon</p>
+    </div>
+    
+    <div id='dataContainer' style='display:none;'>
+      <!-- Dynamic beacon cards will be inserted here -->
+      <div id='beaconsContainer'></div>
+      
+      <div class='card compact'>
+        <h2>📱 Station Status</h2>
+        <div style='display: grid; grid-template-columns: 1fr 1fr; gap: 10px;'>
+          <div>
+            <div class='label'>GPS Status</div>
+            <div class='value' id='stationStatus'>--</div>
+          </div>
+          <div>
+            <div class='label'>Satellites</div>
+            <div class='value' id='stationSats'>--</div>
+          </div>
+          <div>
+            <div class='label'>Latitude</div>
+            <div class='value' id='stationLat'>--</div>
+          </div>
+          <div>
+            <div class='label'>Longitude</div>
+            <div class='value' id='stationLon'>--</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Map View (hidden by default) -->
+    <div id='mapView' style='display:none;'>
+      <div class='map-container'>
+        <button class='fullscreen-btn' onclick='toggleFullscreen()' title='Toggle Fullscreen'>⛶</button>
+        <div id='map'></div>
+        <div class='distance-overlay' id='distanceOverlay'>
+          <div>Distance</div>
+          <div class='distance-value' id='distanceValue'>--</div>
+        </div>
+      </div>
+      
+      <div class='info-panel'>
+        <h3>Location Info</h3>
+        <div class='info-row'>
+          <span>🏃 Dog Speed:</span>
+          <span id='dogSpeed'>--</span>
+        </div>
+        <div class='info-row'>
+          <span>⛰️ Relative Altitude:</span>
+          <span id='dogAltitude'>--</span>
+        </div>
+        <div class='info-row'>
+          <span>📏 Distance:</span>
+          <span id='distance'>--</span>
+        </div>
+        <div class='info-row'>
+          <span>🔄 Last Update:</span>
+          <span id='lastUpdate'>--</span>
+        </div>
+      </div>
+    </div>
+    
+    <!-- History View (hidden by default) -->
+    <div id='historyView' style='display:none;'>
+      <div id='historyMap' style='height: 400px; border-radius: 12px; margin-bottom: 15px;'></div>
+      
+      <div class='card'>
+        <h2>📊 Statistics</h2>
+        <div class='history-stats' id='historyStats'>
+          <div class='card compact'>
+            <div class='label'>Total Distance</div>
+            <div class='value' id='totalDistance'>0 km</div>
+          </div>
+          <div class='card compact'>
+            <div class='label'>Average Speed</div>
+            <div class='value' id='avgSpeed'>0 km/h</div>
+          </div>
+          <div class='card compact'>
+            <div class='label'>Max Speed</div>
+            <div class='value' id='maxSpeed'>0 km/h</div>
+          </div>
+          <div class='card compact'>
+            <div class='label'>Data Points</div>
+            <div class='value' id='dataPoints'>0</div>
+          </div>
+          <div class='card compact'>
+            <div class='label'>Time Range</div>
+            <div class='value' id='timeRange'>--</div>
+          </div>
+          <div class='card compact'>
+            <div class='label'>Min Battery</div>
+            <div class='value' id='minBattery'>-- V</div>
+          </div>
+        </div>
+      </div>
+      
+      <div id='noHistoryData' class='card' style='display:none;'>
+        <h2>No History Data Available</h2>
+        <p style='color: #c084fc;'>Beacon location history will appear here once the station starts receiving beacon transmissions.</p>
+      </div>
+    </div>
+    
+    <!-- Stats View (hidden by default) -->
+    <div id='statsView' style='display:none;'>
+      <div class='card'>
+        <h2>📊 Statistics</h2>
+        <div id='statsContent'>
+          <p>Statistics view - Coming soon</p>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Config View (hidden by default) -->
+    <div id='configView' style='display:none;'>
+      <div class='card'>
+        <h2>⚙️ Configuration</h2>
+        <div id='configContent'>
+          <p>Configuration options - Coming soon</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <script src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'></script>
+  <script src='/js/station.js'></script>
+</body>
+</html>

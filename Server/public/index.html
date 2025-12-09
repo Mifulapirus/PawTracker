@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PawTracker - Dashboard</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+</head>
+<body class="dashboard-page">
+  <header class="dashboard-header">
+    <div class="header-content">
+      <h1>🐾 PawTracker Dashboard</h1>
+      <div class="header-actions">
+        <span id="username" class="username"></span>
+        <button id="logoutBtn" class="btn btn-secondary">Logout</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="dashboard-container">
+    <aside class="sidebar">
+      <h2>Active Devices</h2>
+      <div id="deviceList" class="device-list">
+        <p class="loading">Loading devices...</p>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <div class="beacon-panel" id="beaconPanel" style="display: none;">
+        <h3>Beacons for <span id="selectedDeviceName"></span></h3>
+        <button id="closeBeaconPanel" class="btn-close">×</button>
+        <div id="beaconList" class="beacon-grid">
+          <p class="loading">Loading beacons...</p>
+        </div>
+      </div>
+
+      <div id="map" class="map-container"></div>
+      
+      <div class="info-panel" id="infoPanel" style="display: none;">
+        <div class="info-header">
+          <h3 id="infoPanelTitle">Beacon Details</h3>
+          <button id="closeInfoPanel" class="btn-close">×</button>
+        </div>
+        <div id="infoPanelContent" class="info-content">
+        </div>
+      </div>
+      
+      <div class="control-panel">
+        <h3>Remote Control</h3>
+        <div id="controlSection" class="control-section">
+          <p class="hint">Select a device to control LED and buzzer</p>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="/js/dashboard.js"></script>
+</body>
+</html>
