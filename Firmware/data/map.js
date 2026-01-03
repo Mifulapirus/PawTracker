@@ -57,7 +57,7 @@ var LayerControl = L.Control.extend({
   }
 });
 
-var layerControl = new LayerControl({ position: 'topright' });
+var layerControl = new LayerControl({ position: 'bottomleft' });
 layerControl.addTo(map);
 
 // Current active layer
@@ -354,18 +354,23 @@ function updateBeaconData() {
       if (beaconHasValidFix) {
         var beaconLat = data.latitude;
         var beaconLon = data.longitude;
+        var beaconName = data.name || 'Beacon';
+        
+        // Popup content
+        var popupContent = '<b>🐕 ' + beaconName + '</b><br>' + 
+                          'Lat: ' + beaconLat.toFixed(6) + '°<br>' +
+                          'Lon: ' + beaconLon.toFixed(6) + '°<br>' +
+                          'Satellites: ' + data.sats + '<br>' +
+                          'Battery: ' + data.battery.toFixed(2) + ' V';
         
         // Update or create beacon marker
         if (beaconMarker) {
           beaconMarker.setLatLng([beaconLat, beaconLon]);
+          beaconMarker.getPopup().setContent(popupContent);
         } else {
           beaconMarker = L.marker([beaconLat, beaconLon], {icon: beaconIcon})
             .addTo(map)
-            .bindPopup('<b>🐕 Beacon (Dog)</b><br>' + 
-                      'Lat: ' + beaconLat.toFixed(6) + '°<br>' +
-                      'Lon: ' + beaconLon.toFixed(6) + '°<br>' +
-                      'Satellites: ' + data.sats + '<br>' +
-                      'Battery: ' + data.battery.toFixed(2) + ' V');
+            .bindPopup(popupContent);
         }
         
         // Update speed display
@@ -441,8 +446,6 @@ function updateMapView() {
 }
 
 function updateDistance() {
-  var overlay = document.getElementById('distanceOverlay');
-  
   if (beaconMarker && stationMarker) {
     var beaconLatLng = beaconMarker.getLatLng();
     var stationLatLng = stationMarker.getLatLng();
@@ -460,22 +463,16 @@ function updateDistance() {
     
     document.getElementById('distance').textContent = distanceText;
     
-    // Update distance overlay with distance
+    // Update fullscreen overlay with distance in meters
     var distanceOverlay = document.getElementById('distanceValue');
     if (distance < 1000) {
       distanceOverlay.textContent = distance.toFixed(0) + ' m';
     } else {
       distanceOverlay.textContent = (distance / 1000).toFixed(2) + ' km';
     }
-    
-    // Always show overlay when both markers are present
-    overlay.classList.add('show');
   } else {
     document.getElementById('distance').textContent = '--';
     document.getElementById('distanceValue').textContent = '--';
-    
-    // Hide overlay when markers are missing
-    overlay.classList.remove('show');
   }
 }
 
@@ -506,12 +503,14 @@ var isFullscreen = false;
 
 function toggleFullscreen() {
   var mapElement = document.getElementById('map');
+  var overlay = document.getElementById('distanceOverlay');
   var btn = document.querySelector('.fullscreen-btn');
   
   isFullscreen = !isFullscreen;
   
   if (isFullscreen) {
     mapElement.classList.add('fullscreen');
+    overlay.classList.add('show');
     btn.textContent = '⛶';
     btn.style.position = 'fixed';
     btn.style.zIndex = '10000';
@@ -522,6 +521,7 @@ function toggleFullscreen() {
     }, 100);
   } else {
     mapElement.classList.remove('fullscreen');
+    overlay.classList.remove('show');
     btn.textContent = '⛶';
     btn.style.position = 'absolute';
     btn.style.zIndex = '1000';

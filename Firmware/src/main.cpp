@@ -1287,6 +1287,7 @@ void setupWiFiAndWebServer() {
     // Include primary beacon data (backward compatibility)
     json += "\"hasData\":" + String(latestBeacon.hasData ? "true" : "false") + ",";
     json += "\"beaconId\":\"" + String(latestBeacon.beaconId) + "\",";
+    json += "\"name\":\"" + getBeaconName(latestBeacon.beaconId) + "\",";
     json += "\"latitude\":" + String(latestBeacon.latitude, 6) + ",";
     json += "\"longitude\":" + String(latestBeacon.longitude, 6) + ",";
     json += "\"hdop\":" + String(latestBeacon.hdop, 2) + ",";
